@@ -1,11 +1,17 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useApiClient } from "@/hooks/use-api-client";
 import { useMeQuery } from "@/hooks/use-me";
+import { PERMISSIONS } from "@/lib/constants";
 import { classNames } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 import { tenantRoutes } from "@/lib/tenant-routes";
+import type { TenantRole } from "@/lib/types";
 
 interface OverviewSidebarItem {
   href: string;
@@ -18,7 +24,16 @@ interface TenantSidebarItem {
   href: string;
   label: string;
   matchPrefix: string;
-  icon: "dashboard" | "users" | "activity" | "mine" | "review" | "roles" | "departments" | "invites" | "tasks";
+  icon:
+    | "dashboard"
+    | "users"
+    | "activity"
+    | "mine"
+    | "review"
+    | "roles"
+    | "departments"
+    | "invites"
+    | "tasks";
 }
 
 const overviewSidebarItems: OverviewSidebarItem[] = [
@@ -125,15 +140,6 @@ function SidebarIcon({ type }: { type: OverviewSidebarItem["icon"] | TenantSideb
   return null;
 }
 
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] text-[#6b7280]" fill="none" stroke="currentColor" strokeWidth="1.9">
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m20 20-3.6-3.6" />
-    </svg>
-  );
-}
-
 function BellIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.9">
@@ -154,6 +160,7 @@ function SignOutIcon() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
+  const apiClient = useApiClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const meQuery = useMeQuery();
@@ -161,64 +168,120 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const scope = searchParams.get("scope") ?? "";
   const tenantMatch = pathname.match(/^\/app\/tenants\/([^/]+)/);
   const tenantIdFromPath = tenantMatch?.[1] ?? null;
+  const tenantMembership = useMemo(
+    () =>
+      meQuery.data?.memberships.find(
+        (membership) => membership.tenantId === tenantIdFromPath && membership.status === "active"
+      ) ?? null,
+    [meQuery.data?.memberships, tenantIdFromPath]
+  );
+  const rolesQuery = useQuery({
+    queryKey: tenantIdFromPath ? queryKeys.roles(tenantIdFromPath) : ["roles", "none"],
+    queryFn: () => apiClient.get<TenantRole[]>(`/v1/tenants/${tenantIdFromPath}/roles`),
+    enabled: Boolean(tenantIdFromPath && tenantMembership && !tenantMembership.isOwner)
+  });
+  const tenantPermissions = useMemo(() => {
+    if (!tenantMembership || tenantMembership.isOwner) {
+      return new Set<string>();
+    }
+    const roleMap = new Map((rolesQuery.data ?? []).map((role) => [role.id, role]));
+    const permissions = new Set<string>();
+    for (const roleId of tenantMembership.roleIds) {
+      const role = roleMap.get(roleId);
+      if (!role) {
+        continue;
+      }
+      for (const permission of role.permissionKeys) {
+        permissions.add(permission);
+      }
+    }
+    return permissions;
+  }, [rolesQuery.data, tenantMembership]);
+  const isTenantOwner = tenantMembership?.isOwner ?? false;
+  const canViewDashboard =
+    isTenantOwner ||
+    tenantPermissions.has(PERMISSIONS.activityApprove) ||
+    tenantPermissions.has(PERMISSIONS.reportView);
+  const canViewUsers = canViewDashboard;
+  const canManageActivities = isTenantOwner || tenantPermissions.has(PERMISSIONS.taskTemplateManage);
+  const canViewHodReview = canViewDashboard;
+  const canManageRoles = isTenantOwner || tenantPermissions.has(PERMISSIONS.roleManage);
+  const canViewDepartments =
+    isTenantOwner ||
+    tenantPermissions.has(PERMISSIONS.departmentManage) ||
+    tenantPermissions.has(PERMISSIONS.memberManage) ||
+    tenantPermissions.has(PERMISSIONS.reportView);
+  const canManageInvites = isTenantOwner || tenantPermissions.has(PERMISSIONS.memberManage);
   const tenantSidebarItems: TenantSidebarItem[] = tenantIdFromPath
-    ? [
-        {
-          href: tenantRoutes.ownerDashboard(tenantIdFromPath),
-          label: "Dashboard",
-          matchPrefix: tenantRoutes.ownerDashboard(tenantIdFromPath),
-          icon: "dashboard"
-        },
-        {
-          href: tenantRoutes.users(tenantIdFromPath),
-          label: "Users",
-          matchPrefix: tenantRoutes.users(tenantIdFromPath),
-          icon: "users"
-        },
-        {
-          href: tenantRoutes.activityNew(tenantIdFromPath),
-          label: "New Activity",
-          matchPrefix: `/app/tenants/${tenantIdFromPath}/activity`,
-          icon: "activity"
-        },
-        {
+    ? (() => {
+        const items: TenantSidebarItem[] = [];
+        if (canViewDashboard) {
+          items.push({
+            href: tenantRoutes.ownerDashboard(tenantIdFromPath),
+            label: "Dashboard",
+            matchPrefix: tenantRoutes.ownerDashboard(tenantIdFromPath),
+            icon: "dashboard"
+          });
+        }
+        if (canViewUsers) {
+          items.push({
+            href: tenantRoutes.users(tenantIdFromPath),
+            label: "Users",
+            matchPrefix: tenantRoutes.users(tenantIdFromPath),
+            icon: "users"
+          });
+        }
+        if (canManageActivities) {
+          items.push({
+            href: tenantRoutes.activities(tenantIdFromPath),
+            label: "Activities",
+            matchPrefix: tenantRoutes.activities(tenantIdFromPath),
+            icon: "tasks"
+          });
+        }
+        items.push({
           href: tenantRoutes.activityMine(tenantIdFromPath),
           label: "My Activity",
           matchPrefix: tenantRoutes.activityMine(tenantIdFromPath),
           icon: "mine"
-        },
-        {
-          href: tenantRoutes.hodReview(tenantIdFromPath),
-          label: "HOD Review",
-          matchPrefix: `/app/tenants/${tenantIdFromPath}/hod`,
-          icon: "review"
-        },
-        {
-          href: tenantRoutes.adminRoles(tenantIdFromPath),
-          label: "Roles",
-          matchPrefix: tenantRoutes.adminRoles(tenantIdFromPath),
-          icon: "roles"
-        },
-        {
-          href: tenantRoutes.adminDepartments(tenantIdFromPath),
-          label: "Departments",
-          matchPrefix: tenantRoutes.adminDepartments(tenantIdFromPath),
-          icon: "departments"
-        },
-        {
-          href: tenantRoutes.adminInvites(tenantIdFromPath),
-          label: "Invites",
-          matchPrefix: tenantRoutes.adminInvites(tenantIdFromPath),
-          icon: "invites"
-        },
-        {
-          href: tenantRoutes.adminTasks(tenantIdFromPath),
-          label: "Tasks",
-          matchPrefix: tenantRoutes.adminTasks(tenantIdFromPath),
-          icon: "tasks"
+        });
+        if (canViewHodReview) {
+          items.push({
+            href: tenantRoutes.hodReview(tenantIdFromPath),
+            label: "HOD Review",
+            matchPrefix: `/app/tenants/${tenantIdFromPath}/hod`,
+            icon: "review"
+          });
         }
-      ]
+        if (canManageRoles) {
+          items.push({
+            href: tenantRoutes.adminRoles(tenantIdFromPath),
+            label: "Roles",
+            matchPrefix: tenantRoutes.adminRoles(tenantIdFromPath),
+            icon: "roles"
+          });
+        }
+        if (canViewDepartments) {
+          items.push({
+            href: tenantRoutes.adminDepartments(tenantIdFromPath),
+            label: "Departments",
+            matchPrefix: tenantRoutes.adminDepartments(tenantIdFromPath),
+            icon: "departments"
+          });
+        }
+        if (canManageInvites) {
+          items.push({
+            href: tenantRoutes.adminInvites(tenantIdFromPath),
+            label: "Invites",
+            matchPrefix: tenantRoutes.adminInvites(tenantIdFromPath),
+            icon: "invites"
+          });
+        }
+        return items;
+      })()
     : [];
+  const tenantNameFromMembership = tenantMembership?.tenantName ?? null;
+  const tenantTitle = tenantIdFromPath ? tenantNameFromMembership ?? "Unnamed Tenant" : "Tenant Overview";
   const userName = meQuery.data?.user.name ?? auth.user?.name ?? "User";
   const userEmail = meQuery.data?.user.email ?? auth.user?.email ?? "unknown@example.com";
   const initials =
@@ -298,27 +361,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <section className="flex min-w-0 flex-col">
           <div className="sticky top-0 z-10 border-b border-[#e7e8e9] bg-[rgba(255,255,255,0.8)] px-4 py-2 shadow-[0_12px_32px_rgba(25,28,29,0.06)] backdrop-blur-[12px] md:px-8 md:py-3">
-            <div className="flex flex-wrap items-center justify-end gap-3">
-                <div className="flex h-9 w-full min-w-[220px] max-w-[340px] items-center gap-2 rounded-xl bg-[#f3f4f5] px-3 md:w-[340px]">
-                  <SearchIcon />
-                  <input
-                    className="w-full bg-transparent text-sm text-[#191c1d] outline-none placeholder:text-[#6b7280]"
-                    placeholder="Search institutions..."
-                    aria-label="Search institutions"
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="grid h-9 w-9 place-items-center rounded-full text-[#475569] transition hover:bg-[#edf0f4]"
-                  aria-label="Notifications"
+            <div className="flex items-center justify-between gap-3">
+                <h1
+                  className="max-w-[420px] truncate text-left text-sm font-semibold tracking-wide text-[#0f172a] md:max-w-[620px] md:text-base"
+                  title={tenantTitle}
                 >
-                  <BellIcon />
-                </button>
-                <div
-                  title={userEmail}
-                  className="grid h-9 w-9 place-items-center rounded-full border-2 border-white bg-[#f4c7a8] text-xs font-semibold text-[#1f2937] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
-                >
-                  {initials}
+                  {tenantTitle}
+                </h1>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 place-items-center rounded-full text-[#475569] transition hover:bg-[#edf0f4]"
+                    aria-label="Notifications"
+                  >
+                    <BellIcon />
+                  </button>
+                  <div
+                    title={userEmail}
+                    className="grid h-9 w-9 place-items-center rounded-full border-2 border-white bg-[#f4c7a8] text-xs font-semibold text-[#1f2937] shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                  >
+                    {initials}
+                  </div>
                 </div>
             </div>
           </div>

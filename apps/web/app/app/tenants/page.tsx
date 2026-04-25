@@ -62,11 +62,10 @@ export default function TenantsPage() {
               >
                 <div>
                   <p className="font-semibold text-brand-slate">
-                    Tenant: {membership.tenantName ?? membership.tenantId}
+                    Tenant: {membership.tenantName ?? "Unnamed Tenant"}
                   </p>
                   <p className="text-xs text-brand-moss">
-                    ID: {membership.tenantId} | Status: {membership.status} | Home Department:{" "}
-                    {membership.homeDepartmentId ?? "None"}
+                    Status: {membership.status}
                   </p>
                   <p className="text-xs text-brand-moss">Updated: {formatDate(membership.updatedAt)}</p>
                 </div>

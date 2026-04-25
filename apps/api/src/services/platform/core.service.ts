@@ -34,7 +34,13 @@ export class PlatformCoreService {
     const timestamp = nowIso();
     const existing = await this.store.getById<UserEntity>(COLLECTIONS.users, user.uid);
     if (existing) {
-      const next = { ...existing, email: user.email, name: user.name, updatedAt: timestamp };
+      const existingName = existing.name.trim();
+      const next = {
+        ...existing,
+        email: user.email,
+        name: existingName.length > 0 ? existing.name : user.name,
+        updatedAt: timestamp
+      };
       await this.store.set(COLLECTIONS.users, next.id, next);
       return next;
     }

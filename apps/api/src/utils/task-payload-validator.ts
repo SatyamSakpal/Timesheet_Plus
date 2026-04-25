@@ -56,7 +56,8 @@ export function validateTaskPayload(
         }
         break;
       }
-      case "select": {
+      case "select":
+      case "radio": {
         if (typeof value !== "string") {
           badRequest(`Field "${field.key}" must be a string option`);
         }

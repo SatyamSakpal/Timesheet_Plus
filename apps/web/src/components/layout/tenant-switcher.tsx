@@ -37,7 +37,7 @@ export function TenantSwitcher({
       >
         {visibleMemberships.map((membership) => (
           <option key={membership.id} value={membership.tenantId}>
-            {(membership.tenantName ?? `Tenant ${membership.tenantId.slice(0, 8)}`)} ({membership.status})
+            {(membership.tenantName ?? "Unnamed Tenant")} ({membership.status})
           </option>
         ))}
       </Select>

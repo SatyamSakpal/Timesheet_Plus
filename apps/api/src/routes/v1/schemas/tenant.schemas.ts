@@ -51,3 +51,10 @@ export const createRoleSchema = z.object({
 export const assignRoleSchema = z.object({
   roleIds: z.array(z.string().min(1)).min(1)
 });
+
+export const updateMemberHomeDepartmentSchema = z.object({
+  homeDepartmentId: z.preprocess(
+    (value) => (value === "" ? null : value),
+    z.string().min(1).nullable()
+  )
+});

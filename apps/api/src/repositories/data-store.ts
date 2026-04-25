@@ -19,6 +19,7 @@ export interface IDataStore {
   getById<T>(collection: CollectionName, id: string): Promise<T | null>;
   set<T extends { id: string }>(collection: CollectionName, id: string, data: T): Promise<void>;
   create<T extends { id: string }>(collection: CollectionName, data: T): Promise<T>;
+  delete(collection: CollectionName, id: string): Promise<void>;
   update<T extends { id: string }>(
     collection: CollectionName,
     id: string,
@@ -33,6 +34,28 @@ export interface IDataStore {
 
 function clone<T>(data: T): T {
   return JSON.parse(JSON.stringify(data)) as T;
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (value === undefined) {
+    return undefined as T;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => stripUndefinedDeep(entry))
+      .filter((entry) => entry !== undefined) as T;
+  }
+  if (value && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const cleaned = stripUndefinedDeep(entry);
+      if (cleaned !== undefined) {
+        output[key] = cleaned;
+      }
+    }
+    return output as T;
+  }
+  return value;
 }
 
 function compareValue(left: unknown, op: QueryOp, right: unknown): boolean {
@@ -81,6 +104,10 @@ export class InMemoryDataStore implements IDataStore {
   async create<T extends { id: string }>(collection: CollectionName, data: T): Promise<T> {
     this.getCollection(collection).set(data.id, clone(data));
     return clone(data);
+  }
+
+  async delete(collection: CollectionName, id: string): Promise<void> {
+    this.getCollection(collection).delete(id);
   }
 
   async update<T extends { id: string }>(
@@ -161,12 +188,16 @@ export class FirestoreDataStore implements IDataStore {
     id: string,
     data: T
   ): Promise<void> {
-    await this.db.collection(collection).doc(id).set(data);
+    await this.db.collection(collection).doc(id).set(stripUndefinedDeep(data));
   }
 
   async create<T extends { id: string }>(collection: CollectionName, data: T): Promise<T> {
-    await this.db.collection(collection).doc(data.id).set(data);
+    await this.db.collection(collection).doc(data.id).set(stripUndefinedDeep(data));
     return data;
+  }
+
+  async delete(collection: CollectionName, id: string): Promise<void> {
+    await this.db.collection(collection).doc(id).delete();
   }
 
   async update<T extends { id: string }>(
@@ -175,7 +206,7 @@ export class FirestoreDataStore implements IDataStore {
     patch: Partial<T>
   ): Promise<T> {
     const ref = this.db.collection(collection).doc(id);
-    await ref.set(patch as Record<string, unknown>, { merge: true });
+    await ref.set(stripUndefinedDeep(patch) as Record<string, unknown>, { merge: true });
     const next = await ref.get();
     return next.data() as T;
   }

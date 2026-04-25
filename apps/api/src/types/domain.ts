@@ -32,6 +32,7 @@ export type FieldType =
   | "number"
   | "date"
   | "select"
+  | "radio"
   | "checkbox"
   | "textarea";
 
@@ -156,6 +157,9 @@ export interface ActivityEntryEntity extends BaseEntity {
   taskTemplateId: string;
   taskTemplateName: string;
   taskTemplateVersion: number;
+  activityDate: string;
+  startTime: string;
+  endTime: string;
   taskSchemaSnapshot: TaskFieldSchema[];
   payload: Record<string, unknown>;
   status: ActivityStatus;

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { env } from "../config/env";
 import { getFirebaseAuth } from "../config/firebase";
-import { unauthorized } from "../errors/app-error";
+import { AppError, unauthorized } from "../errors/app-error";
 
 function parseBearerToken(header?: string): string {
   if (!header || !header.startsWith("Bearer ")) {
@@ -30,13 +30,23 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     // Production path: validate Firebase ID token and map to request user.
     const token = parseBearerToken(req.header("authorization"));
     const decoded = await getFirebaseAuth().verifyIdToken(token);
+    const email = decoded.email?.trim().toLowerCase();
+    if (!email) {
+      unauthorized("Authenticated account is missing an email address");
+    }
+    if (decoded.email_verified !== true) {
+      unauthorized("Verify your email address before accessing this account");
+    }
     req.user = {
       uid: decoded.uid,
-      email: decoded.email ?? "unknown@example.com",
-      name: decoded.name ?? decoded.email?.split("@")[0] ?? decoded.uid
+      email,
+      name: decoded.name ?? email.split("@")[0] ?? decoded.uid
     };
     return next();
-  } catch {
+  } catch (error) {
+    if (error instanceof AppError) {
+      return next(error);
+    }
     return next(unauthorized("Invalid authentication token"));
   }
 }

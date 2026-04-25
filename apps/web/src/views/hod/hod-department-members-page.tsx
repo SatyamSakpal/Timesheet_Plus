@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/hooks/use-api-client";
 import { useActiveTenant } from "@/hooks/use-active-tenant";
@@ -9,9 +9,11 @@ import type { DepartmentContributorCompact, DepartmentPersonCompact } from "@/li
 import { TenantRequired } from "@/components/layout/tenant-required";
 import { Card, SectionTitle } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
+import { tenantRoutes } from "@/lib/tenant-routes";
 
 export default function HodDepartmentMembersPage() {
   const params = useParams<{ departmentId: string }>();
+  const router = useRouter();
   const departmentId = params.departmentId;
   const apiClient = useApiClient();
   const { activeTenantId } = useActiveTenant();
@@ -49,7 +51,7 @@ export default function HodDepartmentMembersPage() {
       <Card>
         <SectionTitle
           title="Department Visibility"
-          subtitle={`Department ${departmentId} member and contributor views`}
+          subtitle="Member and contributor visibility for the selected department."
         />
       </Card>
 
@@ -66,9 +68,14 @@ export default function HodDepartmentMembersPage() {
             <ul className="space-y-2 text-sm">
               {(membersQuery.data ?? []).map((member) => (
                 <li key={member.id} className="rounded-lg border border-brand-mist/60 bg-white p-2">
-                  <p className="font-semibold text-brand-slate">{member.name}</p>
+                  <button
+                    type="button"
+                    className="font-semibold text-brand-slate hover:text-[#1d4ed8] hover:underline"
+                    onClick={() => router.push(tenantRoutes.userDetail(activeTenantId, member.id))}
+                  >
+                    {member.name}
+                  </button>
                   <p className="text-xs text-brand-moss">{member.email}</p>
-                  <p className="font-mono text-xs text-brand-moss">{member.id}</p>
                 </li>
               ))}
             </ul>
@@ -91,7 +98,13 @@ export default function HodDepartmentMembersPage() {
             <ul className="space-y-2 text-sm">
               {(contributorsQuery.data ?? []).map((contributor) => (
                 <li key={contributor.id} className="rounded-lg border border-brand-mist/60 bg-white p-2">
-                  <p className="font-semibold text-brand-slate">{contributor.name}</p>
+                  <button
+                    type="button"
+                    className="font-semibold text-brand-slate hover:text-[#1d4ed8] hover:underline"
+                    onClick={() => router.push(tenantRoutes.userDetail(activeTenantId, contributor.id))}
+                  >
+                    {contributor.name}
+                  </button>
                   <p className="text-xs text-brand-moss">{contributor.email}</p>
                   <p className="text-xs text-brand-moss">
                     Entries: {contributor.entryCount} | Latest: {formatDate(contributor.latestEntryAt)}
@@ -107,4 +120,3 @@ export default function HodDepartmentMembersPage() {
     </div>
   );
 }
-

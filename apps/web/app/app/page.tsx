@@ -312,7 +312,7 @@ function PendingInviteCard({
         Roles: {invite.roleNames.length > 0 ? invite.roleNames.join(", ") : "Staff"}
       </p>
       <p className="mt-1 text-xs text-[#64748b]">
-        Invited by {invite.invitedByName ?? invite.invitedBy}
+        Invited by {invite.invitedByName ?? "Team Admin"}
       </p>
       <button
         type="button"

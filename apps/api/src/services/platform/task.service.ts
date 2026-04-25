@@ -13,6 +13,14 @@ import { DepartmentService } from "./department.service";
  * - per-department task assignment mapping
  */
 export class TaskService extends DepartmentService {
+  async listTaskTemplates(tenantId: string): Promise<TaskTemplateEntity[]> {
+    await this.getTenantOrThrow(tenantId);
+    const templates = await this.store.query<TaskTemplateEntity>(COLLECTIONS.taskTemplates, [
+      { field: "tenantId", op: "==", value: tenantId }
+    ]);
+    return templates.sort((left, right) => left.name.localeCompare(right.name));
+  }
+
   async createTaskTemplate(
     tenantId: string,
     actorUserId: string,
@@ -38,6 +46,45 @@ export class TaskService extends DepartmentService {
       name: template.name
     });
     return template;
+  }
+
+  async updateTaskTemplate(
+    tenantId: string,
+    taskTemplateId: string,
+    actorUserId: string,
+    input: {
+      name: string;
+      description?: string;
+      fields: TaskTemplateEntity["fields"];
+      isActive?: boolean;
+    }
+  ): Promise<TaskTemplateEntity> {
+    const template = await this.getTaskTemplateOrThrow(tenantId, taskTemplateId);
+    await this.assertFieldTypesConfigured(input.fields.map((field) => field.type));
+
+    const timestamp = nowIso();
+    const next = await this.store.update<TaskTemplateEntity>(COLLECTIONS.taskTemplates, template.id, {
+      name: input.name,
+      description: input.description,
+      fields: input.fields,
+      isActive: input.isActive ?? template.isActive,
+      version: template.version + 1,
+      updatedAt: timestamp
+    });
+
+    await this.createAuditLog(
+      tenantId,
+      actorUserId,
+      "task_template.update",
+      "task_template",
+      template.id,
+      {
+        name: input.name,
+        isActive: input.isActive ?? template.isActive
+      }
+    );
+
+    return next;
   }
 
   async assignTaskToDepartment(
@@ -82,6 +129,38 @@ export class TaskService extends DepartmentService {
       { taskTemplateId }
     );
     return assignment;
+  }
+
+  async unassignTaskFromDepartment(
+    tenantId: string,
+    departmentId: string,
+    taskTemplateId: string,
+    actorUserId: string
+  ): Promise<void> {
+    await this.getDepartmentOrThrow(tenantId, departmentId);
+    await this.getTaskTemplateOrThrow(tenantId, taskTemplateId);
+
+    const existingAssignments = await this.store.query<DepartmentTaskEntity>(
+      COLLECTIONS.departmentTasks,
+      [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "departmentId", op: "==", value: departmentId },
+        { field: "taskTemplateId", op: "==", value: taskTemplateId }
+      ]
+    );
+
+    for (const assignment of existingAssignments) {
+      await this.store.delete(COLLECTIONS.departmentTasks, assignment.id);
+    }
+
+    await this.createAuditLog(
+      tenantId,
+      actorUserId,
+      "department.task.unassign",
+      "department",
+      departmentId,
+      { taskTemplateId, removedCount: existingAssignments.length }
+    );
   }
 
   async listDepartmentTasks(tenantId: string, departmentId: string): Promise<TaskTemplateEntity[]> {

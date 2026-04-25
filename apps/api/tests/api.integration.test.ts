@@ -22,6 +22,12 @@ const worker = {
   name: "Worker"
 };
 
+const activityWindow = {
+  activityDate: "2026-04-10",
+  startTime: "09:00",
+  endTime: "10:30"
+};
+
 function withAuth(
   req: request.Test,
   user: { id: string; email: string; name: string }
@@ -119,6 +125,7 @@ describe("TimesheetPlus API", () => {
       request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
         workDepartmentId: base.depBId,
         taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
         payload: {
           description: "Reviewed module",
           hours: 2
@@ -142,6 +149,7 @@ describe("TimesheetPlus API", () => {
       request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
         workDepartmentId: base.depBId,
         taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
         payload: {
           description: "Invalid entry",
           hours: "three"
@@ -152,6 +160,40 @@ describe("TimesheetPlus API", () => {
     );
 
     expect(activityRes.status).toBe(400);
+  });
+
+  it("rejects activity when time range overlaps existing activity for same user/date", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const first = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        activityDate: "2026-04-10",
+        startTime: "09:00",
+        endTime: "10:30",
+        payload: { description: "Morning review", hours: 1.5 },
+        status: "submitted"
+      }),
+      worker
+    );
+    expect(first.status).toBe(201);
+
+    const overlapping = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        activityDate: "2026-04-10",
+        startTime: "10:00",
+        endTime: "11:00",
+        payload: { description: "Overlapping review", hours: 1 },
+        status: "submitted"
+      }),
+      worker
+    );
+    expect(overlapping.status).toBe(400);
+    expect(String(overlapping.body.error?.message ?? "")).toContain("Time range overlaps");
   });
 
   it("allows only assigned HOD to approve department activity", async () => {
@@ -177,6 +219,7 @@ describe("TimesheetPlus API", () => {
       request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
         workDepartmentId: base.depBId,
         taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
         payload: { description: "Work item", hours: 1.5 },
         status: "submitted"
       }),
@@ -198,6 +241,97 @@ describe("TimesheetPlus API", () => {
     expect(hodApprove.body.data.status).toBe("approved");
   });
 
+  it("restricts HOD activity visibility and review actions to managed departments", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/departments/${base.depAId}/tasks/${base.taskTemplateId}`),
+      owner
+    );
+
+    const depAActivity = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depAId,
+        taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
+        payload: { description: "Department A work", hours: 2 },
+        status: "submitted"
+      }),
+      worker
+    );
+    expect(depAActivity.status).toBe(201);
+    const depAActivityId = depAActivity.body.data.id as string;
+
+    const hodDepAActivities = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/departments/${base.depAId}/activities`),
+      hod
+    );
+    expect(hodDepAActivities.status).toBe(403);
+
+    const ownerDepAActivities = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/departments/${base.depAId}/activities`),
+      owner
+    );
+    expect(ownerDepAActivities.status).toBe(200);
+    expect((ownerDepAActivities.body.data as Array<{ id: string }>).map((row) => row.id)).toContain(
+      depAActivityId
+    );
+
+    const hodApproveDepA = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities/${depAActivityId}/approve`).send({}),
+      hod
+    );
+    expect(hodApproveDepA.status).toBe(403);
+  });
+
+  it("lists all activities logged by the current user in /activities/my", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/departments/${base.depAId}/tasks/${base.taskTemplateId}`),
+      owner
+    );
+
+    await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
+        payload: { description: "Department B work", hours: 2 },
+        status: "submitted"
+      }),
+      worker
+    );
+
+    await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depAId,
+        taskTemplateId: base.taskTemplateId,
+        activityDate: activityWindow.activityDate,
+        startTime: "10:30",
+        endTime: "11:30",
+        payload: { description: "Department A work", hours: 1 },
+        status: "submitted"
+      }),
+      worker
+    );
+
+    const mine = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/activities/my`),
+      worker
+    );
+
+    expect(mine.status).toBe(200);
+    const activities = mine.body.data as Array<{ userId: string; workDepartmentId: string }>;
+    expect(activities).toHaveLength(2);
+    expect(activities.every((entry) => entry.userId === worker.id)).toBe(true);
+    expect(activities.map((entry) => entry.workDepartmentId)).toEqual(
+      expect.arrayContaining([base.depAId, base.depBId])
+    );
+  });
+
   it("shows contributor in department contributors but not in members", async () => {
     const app = createApp();
     const base = await setupBase(app);
@@ -206,6 +340,7 @@ describe("TimesheetPlus API", () => {
       request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
         workDepartmentId: base.depBId,
         taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
         payload: { description: "Cross dept task", hours: 4 },
         status: "submitted"
       }),
@@ -286,6 +421,7 @@ describe("TimesheetPlus API", () => {
       request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
         workDepartmentId: base.depBId,
         taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
         payload: { description: "Cross department work", hours: 2 },
         status: "submitted"
       }),
@@ -311,6 +447,238 @@ describe("TimesheetPlus API", () => {
       worker
     );
     expect(workerDirectory.status).toBe(403);
+  });
+
+  it("removes tenant member with permission checks and blocks owner removal", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const workerDeleteAttempt = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/members/${hod.id}`),
+      worker
+    );
+    expect(workerDeleteAttempt.status).toBe(403);
+
+    const ownerDeleteAttempt = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/members/${owner.id}`),
+      owner
+    );
+    expect(ownerDeleteAttempt.status).toBe(400);
+    expect(String(ownerDeleteAttempt.body.error?.message ?? "")).toContain("owner");
+
+    const removeHod = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/members/${hod.id}`),
+      owner
+    );
+    expect(removeHod.status).toBe(200);
+    expect(removeHod.body.data.userId).toBe(hod.id);
+
+    const membersAfter = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/members`),
+      owner
+    );
+    expect(membersAfter.status).toBe(200);
+    const memberIdsAfter = (membersAfter.body.data as Array<{ userId: string }>).map((member) => member.userId);
+    expect(memberIdsAfter).not.toContain(hod.id);
+
+    const removedHodUsersDirectory = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/users`),
+      hod
+    );
+    expect(removedHodUsersDirectory.status).toBe(403);
+  });
+
+  it("updates a task template and increments its version", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const templatesRes = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/task-templates`),
+      owner
+    );
+    expect(templatesRes.status).toBe(200);
+    const template = (templatesRes.body.data as Array<{ id: string; version: number }>)[0];
+    expect(template).toBeTruthy();
+
+    const updateRes = await withAuth(
+      request(app).patch(`/v1/tenants/${base.tenantId}/task-templates/${template.id}`).send({
+        name: "Updated Task Name",
+        description: "Updated description",
+        fields: [
+          { key: "description", label: "Description", type: "text", required: true },
+          { key: "hours", label: "Hours", type: "number", required: true, min: 0.5, max: 12 },
+          { key: "notes", label: "Notes", type: "textarea", required: false }
+        ]
+      }),
+      owner
+    );
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.data.id).toBe(template.id);
+    expect(updateRes.body.data.name).toBe("Updated Task Name");
+    expect(updateRes.body.data.fields).toHaveLength(3);
+    expect(updateRes.body.data.version).toBe(template.version + 1);
+  });
+
+  it("deletes unassigned custom role and blocks deleting assigned role with user list", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const customRole = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/roles`).send({
+        name: "Finance Reviewer",
+        permissionKeys: ["report.view"]
+      }),
+      owner
+    );
+    expect(customRole.status).toBe(201);
+    const roleId = customRole.body.data.id as string;
+
+    const assignedDelete = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/roles/${roleId}`),
+      owner
+    );
+    expect(assignedDelete.status).toBe(200);
+
+    const secondRole = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/roles`).send({
+        name: "QA Reviewer",
+        permissionKeys: ["report.view"]
+      }),
+      owner
+    );
+    expect(secondRole.status).toBe(201);
+    const secondRoleId = secondRole.body.data.id as string;
+
+    const assignWorkerRole = await withAuth(
+      request(app)
+        .post(`/v1/tenants/${base.tenantId}/members/${worker.id}/roles`)
+        .send({ roleIds: [secondRoleId] }),
+      owner
+    );
+    expect(assignWorkerRole.status).toBe(200);
+
+    const blockedDelete = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/roles/${secondRoleId}`),
+      owner
+    );
+    expect(blockedDelete.status).toBe(400);
+    const blockedMessage = String(blockedDelete.body.error?.message ?? "");
+    expect(blockedMessage).toContain("assigned to");
+    expect(blockedMessage).toContain(worker.name);
+    expect(blockedMessage).toContain(worker.email);
+
+    const workerDelete = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/roles/${secondRoleId}`),
+      worker
+    );
+    expect(workerDelete.status).toBe(403);
+  });
+
+  it("allows owner to remove a task assignment from a department", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const before = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/departments/${base.depBId}/tasks`),
+      owner
+    );
+    expect(before.status).toBe(200);
+    expect((before.body.data as Array<{ id: string }>).map((task) => task.id)).toContain(base.taskTemplateId);
+
+    const removeRes = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/departments/${base.depBId}/tasks/${base.taskTemplateId}`),
+      owner
+    );
+    expect(removeRes.status).toBe(204);
+
+    const after = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/departments/${base.depBId}/tasks`),
+      owner
+    );
+    expect(after.status).toBe(200);
+    expect((after.body.data as Array<{ id: string }>).map((task) => task.id)).not.toContain(base.taskTemplateId);
+  });
+
+  it("returns user detail and allows owner to update home department", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
+        payload: { description: "Cross department work", hours: 3 },
+        status: "submitted"
+      }),
+      worker
+    );
+
+    const userDetailBefore = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/users/${worker.id}`),
+      owner
+    );
+    expect(userDetailBefore.status).toBe(200);
+    expect(userDetailBefore.body.data.scope).toBe("owner");
+    expect(userDetailBefore.body.data.user.userId).toBe(worker.id);
+    expect(userDetailBefore.body.data.user.homeDepartmentId).toBe(base.depAId);
+    expect(userDetailBefore.body.data.stats.totalEntries).toBe(1);
+
+    const updatedMembership = await withAuth(
+      request(app)
+        .patch(`/v1/tenants/${base.tenantId}/users/${worker.id}/home-department`)
+        .send({ homeDepartmentId: base.depBId }),
+      owner
+    );
+    expect(updatedMembership.status).toBe(200);
+    expect(updatedMembership.body.data.homeDepartmentId).toBe(base.depBId);
+
+    const userDetailAfter = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/users/${worker.id}`),
+      owner
+    );
+    expect(userDetailAfter.status).toBe(200);
+    expect(userDetailAfter.body.data.user.homeDepartmentId).toBe(base.depBId);
+  });
+
+  it("limits HOD user detail access to managed visibility and blocks home department updates", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const workerHidden = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/users/${worker.id}`),
+      hod
+    );
+    expect(workerHidden.status).toBe(403);
+
+    await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
+        payload: { description: "Now visible to HOD", hours: 2 },
+        status: "submitted"
+      }),
+      worker
+    );
+
+    const workerVisible = await withAuth(
+      request(app).get(`/v1/tenants/${base.tenantId}/users/${worker.id}`),
+      hod
+    );
+    expect(workerVisible.status).toBe(200);
+    expect(workerVisible.body.data.scope).toBe("hod");
+    expect(workerVisible.body.data.user.visibility).toBe("contributor");
+    expect(workerVisible.body.data.activities[0].canReview).toBe(true);
+
+    const hodPatch = await withAuth(
+      request(app)
+        .patch(`/v1/tenants/${base.tenantId}/users/${worker.id}/home-department`)
+        .send({ homeDepartmentId: base.depBId }),
+      hod
+    );
+    expect(hodPatch.status).toBe(403);
   });
 
   it("seeds default roles and assigns invited role", async () => {
@@ -467,6 +835,27 @@ describe("TimesheetPlus API", () => {
     expect(meAfterAccept.body.data.pendingInvites).toHaveLength(0);
   });
 
+  it("preserves an existing profile name even when a future auth login sends a different provider name", async () => {
+    const app = createApp();
+    const original = {
+      id: "provider-user-1",
+      email: "provider-user@tenant.com",
+      name: "Chosen Name"
+    };
+    const googleProfile = {
+      ...original,
+      name: "Google Display Name"
+    };
+
+    const firstMe = await withAuth(request(app).get("/v1/me"), original);
+    expect(firstMe.status).toBe(200);
+    expect(firstMe.body.data.user.name).toBe("Chosen Name");
+
+    const secondMe = await withAuth(request(app).get("/v1/me"), googleProfile);
+    expect(secondMe.status).toBe(200);
+    expect(secondMe.body.data.user.name).toBe("Chosen Name");
+  });
+
   it("exposes permission and field master catalogs", async () => {
     const app = createApp();
 
@@ -486,7 +875,7 @@ describe("TimesheetPlus API", () => {
     expect(fieldsRes.status).toBe(200);
     const fieldKeys = (fieldsRes.body.data as Array<{ key: string }>).map((x) => x.key);
     expect(fieldKeys).toEqual(
-      expect.arrayContaining(["text", "number", "date", "select", "checkbox", "textarea"])
+      expect.arrayContaining(["text", "number", "date", "select", "radio", "checkbox", "textarea"])
     );
   });
 

@@ -70,6 +70,35 @@ export function DynamicFieldRenderer({
           );
         }
 
+        if (field.type === "radio") {
+          return (
+            <div key={field.key}>
+              <Label>
+                {field.label}
+                {required}
+              </Label>
+              <div className="mt-2 space-y-2 rounded-md border border-brand-mist bg-white px-3 py-2">
+                {(field.options ?? []).map((option, index) => {
+                  const optionId = `${fieldId}-${index}`;
+                  return (
+                    <label key={option} htmlFor={optionId} className="flex items-center gap-2 text-sm text-brand-slate">
+                      <input
+                        id={optionId}
+                        type="radio"
+                        name={fieldId}
+                        value={option}
+                        checked={asString(currentValue) === option}
+                        onChange={(event) => onChange(field.key, event.target.value)}
+                      />
+                      <span>{option}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
         if (field.type === "checkbox") {
           return (
             <div key={field.key} className="flex items-center gap-2 rounded-md border border-brand-mist bg-white px-3 py-2">

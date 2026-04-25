@@ -18,11 +18,18 @@ async function assertDepartmentViewer(req: Request): Promise<void> {
   const service = getPlatformService();
   const tenantId = param(req, "tenantId");
   const departmentId = param(req, "departmentId");
-  const isHod = await service.isDepartmentHod(tenantId, departmentId, req.user!.uid);
+  const managedDepartmentIds = req.tenantContext!.isOwner
+    ? []
+    : await service.listManagedDepartmentIds(tenantId, req.user!.uid);
+  const isManagedByHod = managedDepartmentIds.includes(departmentId);
+  if (!req.tenantContext!.isOwner && managedDepartmentIds.length > 0 && !isManagedByHod) {
+    forbidden("HOD can only access department views in managed departments");
+  }
   const canView =
     req.tenantContext!.isOwner ||
-    isHod ||
-    req.tenantContext!.permissions.has(PERMISSIONS.reportView);
+    isManagedByHod ||
+    (managedDepartmentIds.length === 0 &&
+      req.tenantContext!.permissions.has(PERMISSIONS.reportView));
   if (!canView) {
     forbidden("Only owner/HOD/report viewers can access this department view");
   }
@@ -50,7 +57,8 @@ scopedDepartmentRouter.get(
       req.tenantContext!.isOwner ||
       req.tenantContext!.permissions.has(PERMISSIONS.departmentManage) ||
       req.tenantContext!.permissions.has(PERMISSIONS.memberManage) ||
-      req.tenantContext!.permissions.has(PERMISSIONS.reportView);
+      req.tenantContext!.permissions.has(PERMISSIONS.reportView) ||
+      req.tenantContext!.permissions.has(PERMISSIONS.activityCreate);
     if (!canViewDepartments) {
       forbidden("Only owner or authorized department viewers can access departments");
     }
@@ -108,6 +116,18 @@ scopedDepartmentRouter.get(
       name: member.name
     }));
     res.json({ data: compact });
+  })
+);
+
+scopedDepartmentRouter.get(
+  "/:departmentId/hods",
+  asyncHandler(async (req, res) => {
+    await assertDepartmentViewer(req);
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const departmentId = param(req, "departmentId");
+    const hods = await service.listDepartmentHods(tenantId, departmentId);
+    res.json({ data: hods });
   })
 );
 

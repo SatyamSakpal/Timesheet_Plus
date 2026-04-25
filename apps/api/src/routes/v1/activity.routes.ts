@@ -18,6 +18,27 @@ const scopedTenantRouter = Router({ mergeParams: true });
 
 scopedTenantRouter.use(authenticate, attachTenantContext);
 
+async function resolveDepartmentScope(
+  tenantId: string,
+  userId: string,
+  departmentId: string,
+  isOwner: boolean
+): Promise<{ managedDepartmentIds: string[]; isManagedByHod: boolean }> {
+  if (isOwner) {
+    return { managedDepartmentIds: [], isManagedByHod: false };
+  }
+
+  const service = getPlatformService();
+  const managedDepartmentIds = await service.listManagedDepartmentIds(tenantId, userId);
+  const isManagedByHod = managedDepartmentIds.includes(departmentId);
+
+  if (managedDepartmentIds.length > 0 && !isManagedByHod) {
+    forbidden("HOD can only access activity logs in managed departments");
+  }
+
+  return { managedDepartmentIds, isManagedByHod };
+}
+
 scopedTenantRouter.post(
   "/activities",
   asyncHandler(async (req, res) => {
@@ -30,16 +51,42 @@ scopedTenantRouter.post(
 );
 
 scopedTenantRouter.get(
+  "/activities/my",
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const status = req.query.status;
+    if (status && !["draft", "submitted", "approved", "rejected", "resubmitted"].includes(String(status))) {
+      badRequest("Invalid status filter");
+    }
+
+    const activities = await service.listMyActivities(tenantId, req.user!.uid, {
+      status: status ? (String(status) as ActivityStatus) : undefined,
+      departmentId: req.query.departmentId ? String(req.query.departmentId) : undefined,
+      dateFrom: req.query.dateFrom ? String(req.query.dateFrom) : undefined,
+      dateTo: req.query.dateTo ? String(req.query.dateTo) : undefined
+    });
+    res.json({ data: activities });
+  })
+);
+
+scopedTenantRouter.get(
   "/departments/:departmentId/activities",
   asyncHandler(async (req, res) => {
     const service = getPlatformService();
     const tenantId = param(req, "tenantId");
     const departmentId = param(req, "departmentId");
-    const isHod = await service.isDepartmentHod(tenantId, departmentId, req.user!.uid);
+    const scope = await resolveDepartmentScope(
+      tenantId,
+      req.user!.uid,
+      departmentId,
+      req.tenantContext!.isOwner
+    );
     const canView =
       req.tenantContext!.isOwner ||
-      isHod ||
-      req.tenantContext!.permissions.has(PERMISSIONS.reportView);
+      scope.isManagedByHod ||
+      (scope.managedDepartmentIds.length === 0 &&
+        req.tenantContext!.permissions.has(PERMISSIONS.reportView));
     if (!canView) {
       forbidden("Only owner/HOD/report viewers can access department activities");
     }
@@ -66,11 +113,17 @@ scopedTenantRouter.post(
     const tenantId = param(req, "tenantId");
     const activityId = param(req, "activityId");
     const activity = await service.getActivityOrThrow(tenantId, activityId);
-    const isHod = await service.isDepartmentHod(tenantId, activity.workDepartmentId, req.user!.uid);
+    const scope = await resolveDepartmentScope(
+      tenantId,
+      req.user!.uid,
+      activity.workDepartmentId,
+      req.tenantContext!.isOwner
+    );
     const canApprove =
       req.tenantContext!.isOwner ||
-      isHod ||
-      req.tenantContext!.permissions.has(PERMISSIONS.activityApprove);
+      scope.isManagedByHod ||
+      (scope.managedDepartmentIds.length === 0 &&
+        req.tenantContext!.permissions.has(PERMISSIONS.activityApprove));
     if (!canApprove) {
       forbidden("Only assigned HOD/owner/approver role can approve this activity");
     }
@@ -87,11 +140,17 @@ scopedTenantRouter.post(
     const tenantId = param(req, "tenantId");
     const activityId = param(req, "activityId");
     const activity = await service.getActivityOrThrow(tenantId, activityId);
-    const isHod = await service.isDepartmentHod(tenantId, activity.workDepartmentId, req.user!.uid);
+    const scope = await resolveDepartmentScope(
+      tenantId,
+      req.user!.uid,
+      activity.workDepartmentId,
+      req.tenantContext!.isOwner
+    );
     const canReject =
       req.tenantContext!.isOwner ||
-      isHod ||
-      req.tenantContext!.permissions.has(PERMISSIONS.activityApprove);
+      scope.isManagedByHod ||
+      (scope.managedDepartmentIds.length === 0 &&
+        req.tenantContext!.permissions.has(PERMISSIONS.activityApprove));
     if (!canReject) {
       forbidden("Only assigned HOD/owner/approver role can reject this activity");
     }
@@ -112,7 +171,17 @@ scopedTenantRouter.post(
   })
 );
 
+scopedTenantRouter.delete(
+  "/activities/:activityId",
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const activityId = param(req, "activityId");
+    await service.deleteOwnPendingActivity(tenantId, activityId, req.user!.uid);
+    res.status(204).send();
+  })
+);
+
 router.use("/tenants/:tenantId", scopedTenantRouter);
 
 export const activityRouter = router;
-

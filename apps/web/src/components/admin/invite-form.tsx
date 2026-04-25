@@ -14,7 +14,6 @@ export function InviteForm({ tenantId }: { tenantId: string }) {
   const [email, setEmail] = useState("");
   const [homeDepartmentId, setHomeDepartmentId] = useState("");
   const [roleId, setRoleId] = useState("");
-  const [recentInviteId, setRecentInviteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const rolesQuery = useQuery({
@@ -41,10 +40,9 @@ export function InviteForm({ tenantId }: { tenantId: string }) {
           roleId: roleId || undefined
         }
       }),
-    onSuccess: (response) => {
+    onSuccess: () => {
       setEmail("");
       setRoleId("");
-      setRecentInviteId(response.invite.id);
       void invitesQuery.refetch();
       setError(null);
     },
@@ -119,11 +117,6 @@ export function InviteForm({ tenantId }: { tenantId: string }) {
 
       <Card>
         <SectionTitle title="Invites" subtitle="View invite lifecycle across pending, accepted, and revoked states." />
-        {recentInviteId ? (
-          <p className="mb-3 text-sm text-brand-moss">
-            Latest invite created: <strong>{recentInviteId}</strong>
-          </p>
-        ) : null}
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-brand-mist/40 text-xs uppercase tracking-wide text-brand-moss">
@@ -157,11 +150,11 @@ export function InviteForm({ tenantId }: { tenantId: string }) {
                   <td className="px-3 py-2 text-brand-slate">{invite.email}</td>
                   <td className="px-3 py-2 text-brand-slate">
                     {(departmentsQuery.data ?? []).find((department) => department.id === invite.homeDepartmentId)?.name ??
-                      (invite.homeDepartmentId ?? "Unassigned")}
+                      "Unassigned"}
                   </td>
                   <td className="px-3 py-2 text-brand-slate">{invite.roleNames.join(", ") || "Staff"}</td>
                   <td className="px-3 py-2 text-brand-slate">{invite.status}</td>
-                  <td className="px-3 py-2 text-brand-slate">{invite.invitedByName ?? invite.invitedBy}</td>
+                  <td className="px-3 py-2 text-brand-slate">{invite.invitedByName ?? "System"}</td>
                   <td className="px-3 py-2 text-brand-slate">{formatDate(invite.createdAt)}</td>
                   <td className="px-3 py-2 text-brand-slate">
                     {invite.acceptedAt ? formatDate(invite.acceptedAt) : "-"}

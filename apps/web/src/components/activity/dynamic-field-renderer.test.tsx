@@ -17,6 +17,13 @@ describe("DynamicFieldRenderer", () => {
       required: true,
       options: ["Online", "Onsite"]
     },
+    {
+      key: "priority",
+      label: "Priority",
+      type: "radio",
+      required: true,
+      options: ["High", "Medium", "Low"]
+    },
     { key: "billable", label: "Billable", type: "checkbox", required: false }
   ];
 
@@ -30,6 +37,7 @@ describe("DynamicFieldRenderer", () => {
     fireEvent.change(screen.getByLabelText("Work Date *"), { target: { value: "2026-04-20" } });
     fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Line notes" } });
     fireEvent.change(screen.getByLabelText("Mode *"), { target: { value: "Online" } });
+    fireEvent.click(screen.getByLabelText("High"));
     fireEvent.click(screen.getByLabelText("Billable"));
 
     expect(onChange).toHaveBeenCalledWith("title", "Review PR");
@@ -37,6 +45,7 @@ describe("DynamicFieldRenderer", () => {
     expect(onChange).toHaveBeenCalledWith("workDate", "2026-04-20");
     expect(onChange).toHaveBeenCalledWith("notes", "Line notes");
     expect(onChange).toHaveBeenCalledWith("mode", "Online");
+    expect(onChange).toHaveBeenCalledWith("priority", "High");
     expect(onChange).toHaveBeenCalledWith("billable", true);
   });
 });

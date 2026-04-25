@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useActiveTenant } from "@/hooks/use-active-tenant";
 import { useApiClient } from "@/hooks/use-api-client";
+import { useTenantPermissions } from "@/hooks/use-tenant-permissions";
+import { PERMISSIONS } from "@/lib/constants";
 import { queryKeys } from "@/lib/query-keys";
 import type { PermissionCatalogItem, TenantRole } from "@/lib/types";
 import { Button, Card, InlineError, Input, Label, SectionTitle } from "@/components/ui/primitives";
@@ -10,9 +13,15 @@ import { Button, Card, InlineError, Input, Label, SectionTitle } from "@/compone
 export function RoleEditor({ tenantId }: { tenantId: string }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
+  const { activeMembership } = useActiveTenant();
+  const { permissions } = useTenantPermissions();
   const [name, setName] = useState("");
   const [selectedPermissions, setSelectedPermissions] = useState<Record<string, boolean>>({});
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const canManageRoles =
+    (activeMembership?.isOwner ?? false) || permissions.has(PERMISSIONS.roleManage);
 
   const permissionsQuery = useQuery({
     queryKey: queryKeys.permissionsCatalog,
@@ -34,6 +43,20 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
     },
     onError: (nextError) => {
       setError(nextError instanceof Error ? nextError.message : "Failed to create role.");
+    }
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (roleId: string) => apiClient.delete<TenantRole>(`/v1/tenants/${tenantId}/roles/${roleId}`),
+    onSuccess: async () => {
+      setError(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.roles(tenantId) });
+    },
+    onError: (nextError) => {
+      setError(nextError instanceof Error ? nextError.message : "Failed to delete role.");
+    },
+    onSettled: () => {
+      setDeletingRoleId(null);
     }
   });
 
@@ -66,6 +89,10 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
       setError("Select at least one permission.");
       return;
     }
+    if (!canManageRoles) {
+      setError("You do not have permission to manage roles.");
+      return;
+    }
     createRoleMutation.mutate({ name: name.trim(), permissionKeys });
   }
 
@@ -80,10 +107,30 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
         <div className="space-y-2">
           {(rolesQuery.data ?? []).map((role) => (
             <div key={role.id} className="rounded-md border border-brand-mist/60 bg-white p-3">
-              <p className="font-semibold text-brand-slate">
-                {role.name} {role.isSystem ? "(System)" : ""}
-              </p>
-              <p className="mt-1 text-xs text-brand-moss">{role.permissionKeys.join(", ")}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-brand-slate">
+                    {role.name} {role.isSystem ? "(System)" : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-brand-moss">{role.permissionKeys.join(", ")}</p>
+                </div>
+                {canManageRoles && !role.isSystem ? (
+                  <Button
+                    variant="ghost"
+                    disabled={deleteRoleMutation.isPending}
+                    onClick={() => {
+                      const ok = window.confirm(`Delete role "${role.name}"?`);
+                      if (!ok) {
+                        return;
+                      }
+                      setDeletingRoleId(role.id);
+                      deleteRoleMutation.mutate(role.id);
+                    }}
+                  >
+                    {deleteRoleMutation.isPending && deletingRoleId === role.id ? "Deleting..." : "Delete"}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
@@ -91,6 +138,9 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
 
       <Card>
         <SectionTitle title="Create Role" subtitle="Permission keys are sourced from /v1/catalog/permissions." />
+        {!canManageRoles ? (
+          <p className="text-sm text-brand-moss">You have view-only access for roles.</p>
+        ) : null}
         <form className="space-y-3" onSubmit={onSubmit}>
           <div className="max-w-md">
             <Label htmlFor="role-name">Role Name</Label>
@@ -99,6 +149,7 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Finance Reviewer"
+              disabled={!canManageRoles}
             />
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -112,6 +163,7 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
                         type="checkbox"
                         checked={Boolean(selectedPermissions[permission.key])}
                         onChange={() => onToggle(permission.key)}
+                        disabled={!canManageRoles}
                       />
                       <span>
                         <span className="font-semibold">{permission.name}</span>
@@ -124,7 +176,7 @@ export function RoleEditor({ tenantId }: { tenantId: string }) {
             ))}
           </div>
           <InlineError message={error} />
-          <Button type="submit" disabled={createRoleMutation.isPending}>
+          <Button type="submit" disabled={createRoleMutation.isPending || !canManageRoles}>
             {createRoleMutation.isPending ? "Creating..." : "Create Role"}
           </Button>
         </form>

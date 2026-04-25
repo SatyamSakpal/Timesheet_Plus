@@ -1,6 +1,8 @@
-import { badRequest, forbidden } from "../../errors/app-error";
+import { PERMISSIONS } from "../../constants/permissions";
+import { badRequest, forbidden, notFound } from "../../errors/app-error";
 import {
   COLLECTIONS,
+  type ActivityEntryEntity,
   type DepartmentEntity,
   type DepartmentHodEntity,
   type DepartmentMembershipEntity,
@@ -118,6 +120,52 @@ export class DepartmentService extends TenantRoleService {
       departmentHodId(tenantId, departmentId, userId)
     );
     return Boolean(hod);
+  }
+
+  async listDepartmentHods(
+    tenantId: string,
+    departmentId: string
+  ): Promise<
+    Array<{
+      id: string;
+      email: string;
+      name: string;
+      assignedBy: string;
+      assignedByName: string | null;
+      assignedAt: string;
+    }>
+  > {
+    await this.getDepartmentOrThrow(tenantId, departmentId);
+    const assignments = await this.store.query<DepartmentHodEntity>(COLLECTIONS.departmentHods, [
+      { field: "tenantId", op: "==", value: tenantId },
+      { field: "departmentId", op: "==", value: departmentId }
+    ]);
+    if (assignments.length === 0) {
+      return [];
+    }
+
+    const people = await this.getUsersByIds(
+      assignments.flatMap((assignment) => [assignment.userId, assignment.assignedBy])
+    );
+    const peopleById = new Map(people.map((person) => [person.id, person]));
+
+    return assignments
+      .map((assignment) => {
+        const hod = peopleById.get(assignment.userId);
+        if (!hod) {
+          return null;
+        }
+        return {
+          id: hod.id,
+          email: hod.email,
+          name: hod.name,
+          assignedBy: assignment.assignedBy,
+          assignedByName: peopleById.get(assignment.assignedBy)?.name ?? null,
+          assignedAt: assignment.createdAt
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .sort((left, right) => right.assignedAt.localeCompare(left.assignedAt));
   }
 
   async listDepartmentMembers(tenantId: string, departmentId: string): Promise<UserEntity[]> {
@@ -319,6 +367,280 @@ export class DepartmentService extends TenantRoleService {
       scope: "hod",
       managedDepartmentIds,
       users
+    };
+  }
+
+  async getTenantUserDetailForOwnerOrHod(
+    tenantId: string,
+    viewerUserId: string,
+    targetUserId: string
+  ): Promise<{
+    scope: "owner" | "hod";
+    managedDepartmentIds: string[];
+    viewerCanManageMember: boolean;
+    user: {
+      userId: string;
+      name: string;
+      email: string;
+      status: "active" | "invited" | "suspended";
+      roleIds: string[];
+      roleNames: string[];
+      homeDepartmentId: string | null;
+      isOwner: boolean;
+      departmentIds: string[];
+      visibility: "tenant" | "member" | "contributor" | "member+contributor";
+    };
+    stats: {
+      totalEntries: number;
+      draftCount: number;
+      submittedCount: number;
+      approvedCount: number;
+      rejectedCount: number;
+      resubmittedCount: number;
+      pendingReviewCount: number;
+      uniqueDepartments: number;
+      latestActivityAt: string | null;
+    };
+    activities: Array<
+      ActivityEntryEntity & {
+        canReview: boolean;
+      }
+    >;
+    availableHomeDepartments: Array<{ id: string; name: string }>;
+    departmentNameById: Record<string, string>;
+  }> {
+    const tenant = await this.getTenantOrThrow(tenantId);
+    const viewerContext = await this.getTenantContext(tenantId, viewerUserId);
+    const isOwnerViewer = tenant.ownerIds.includes(viewerUserId);
+
+    const membership = await this.store.getById<TenantMembershipEntity>(
+      COLLECTIONS.tenantMemberships,
+      tenantMembershipId(tenantId, targetUserId)
+    );
+    if (!membership) {
+      notFound("User not found in tenant");
+    }
+
+    const user = await this.store.getById<UserEntity>(COLLECTIONS.users, targetUserId);
+    if (!user) {
+      notFound("User profile not found");
+    }
+
+    const managedDepartmentIds = isOwnerViewer
+      ? []
+      : await this.getManagedDepartmentIdsOrThrow(tenantId, viewerUserId);
+    const managedSet = new Set(managedDepartmentIds);
+
+    const roles = await this.store.query<TenantRoleEntity>(COLLECTIONS.tenantRoles, [
+      { field: "tenantId", op: "==", value: tenantId }
+    ]);
+    const roleMap = new Map(roles.map((role) => [role.id, role]));
+    const resolvedRoleNames = membership.roleIds
+      .map((roleId) => roleMap.get(roleId)?.name)
+      .filter((name): name is string => Boolean(name));
+    const isUserOwner = tenant.ownerIds.includes(targetUserId);
+    const roleNames = resolvedRoleNames.length > 0 ? resolvedRoleNames : isUserOwner ? ["Owner"] : [];
+
+    const explicitAssignments = await this.store.query<DepartmentMembershipEntity>(
+      COLLECTIONS.departmentMemberships,
+      [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "userId", op: "==", value: targetUserId }
+      ]
+    );
+
+    const memberDepartmentIds = new Set<string>();
+    if (membership.homeDepartmentId) {
+      memberDepartmentIds.add(membership.homeDepartmentId);
+    }
+    for (const assignment of explicitAssignments) {
+      memberDepartmentIds.add(assignment.departmentId);
+    }
+
+    const allActivities = await this.store.query<ActivityEntryEntity>(COLLECTIONS.activityEntries, [
+      { field: "tenantId", op: "==", value: tenantId },
+      { field: "userId", op: "==", value: targetUserId }
+    ]);
+
+    const visibleActivities = isOwnerViewer
+      ? allActivities
+      : allActivities.filter((activity) => managedSet.has(activity.workDepartmentId));
+
+    const memberInManaged = [...memberDepartmentIds].filter((departmentId) => managedSet.has(departmentId));
+    const contributorInManaged = [
+      ...new Set(
+        visibleActivities
+          .map((activity) => activity.workDepartmentId)
+          .filter((departmentId) => !memberDepartmentIds.has(departmentId))
+      )
+    ];
+
+    if (!isOwnerViewer && memberInManaged.length === 0 && contributorInManaged.length === 0) {
+      forbidden("Only users visible in your managed departments can be accessed");
+    }
+
+    const visibility: "tenant" | "member" | "contributor" | "member+contributor" = isOwnerViewer
+      ? "tenant"
+      : memberInManaged.length > 0 && contributorInManaged.length > 0
+        ? "member+contributor"
+        : memberInManaged.length > 0
+          ? "member"
+          : "contributor";
+
+    const viewerCanManageMember =
+      viewerContext.isOwner || viewerContext.permissions.has(PERMISSIONS.memberManage);
+    const viewerCanApproveAny =
+      viewerContext.isOwner || viewerContext.permissions.has(PERMISSIONS.activityApprove);
+
+    const activities = visibleActivities
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((activity) => ({
+        ...activity,
+        canReview: viewerCanApproveAny || managedSet.has(activity.workDepartmentId)
+      }));
+
+    const departments = await this.listTenantDepartments(tenantId);
+    const departmentNameById = Object.fromEntries(
+      departments.map((department) => [department.id, department.name])
+    );
+
+    return {
+      scope: isOwnerViewer ? "owner" : "hod",
+      managedDepartmentIds,
+      viewerCanManageMember,
+      user: {
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        status: membership.status,
+        roleIds: membership.roleIds,
+        roleNames,
+        homeDepartmentId: membership.homeDepartmentId,
+        isOwner: isUserOwner,
+        departmentIds: isOwnerViewer
+          ? [...memberDepartmentIds].sort()
+          : [...new Set([...memberInManaged, ...contributorInManaged])].sort(),
+        visibility
+      },
+      stats: this.buildActivityStats(activities),
+      activities,
+      availableHomeDepartments: viewerCanManageMember
+        ? departments.map((department) => ({ id: department.id, name: department.name }))
+        : [],
+      departmentNameById
+    };
+  }
+
+  async updateTenantMemberHomeDepartment(
+    tenantId: string,
+    memberUserId: string,
+    actorUserId: string,
+    homeDepartmentId: string | null
+  ): Promise<TenantMembershipEntity> {
+    const membershipId = tenantMembershipId(tenantId, memberUserId);
+    const membership = await this.store.getById<TenantMembershipEntity>(
+      COLLECTIONS.tenantMemberships,
+      membershipId
+    );
+    if (!membership) {
+      notFound("Member not found in tenant");
+    }
+
+    const department = homeDepartmentId
+      ? await this.getDepartmentOrThrow(tenantId, homeDepartmentId)
+      : null;
+
+    const timestamp = nowIso();
+    const next = await this.store.update<TenantMembershipEntity>(
+      COLLECTIONS.tenantMemberships,
+      membershipId,
+      {
+        homeDepartmentId: department?.id ?? null,
+        updatedAt: timestamp
+      }
+    );
+
+    await this.createAuditLog(
+      tenantId,
+      actorUserId,
+      "membership.home_department.update",
+      "membership",
+      membershipId,
+      {
+        memberUserId,
+        homeDepartmentId: department?.id ?? null
+      }
+    );
+
+    return next;
+  }
+
+  async listManagedDepartmentIds(tenantId: string, userId: string): Promise<string[]> {
+    const hodAssignments = await this.store.query<DepartmentHodEntity>(COLLECTIONS.departmentHods, [
+      { field: "tenantId", op: "==", value: tenantId },
+      { field: "userId", op: "==", value: userId }
+    ]);
+    return [...new Set(hodAssignments.map((assignment) => assignment.departmentId))];
+  }
+
+  private async getManagedDepartmentIdsOrThrow(
+    tenantId: string,
+    userId: string
+  ): Promise<string[]> {
+    const managedDepartmentIds = await this.listManagedDepartmentIds(tenantId, userId);
+    if (managedDepartmentIds.length === 0) {
+      forbidden("Only owner or department head can access this user view");
+    }
+    return managedDepartmentIds;
+  }
+
+  private buildActivityStats(
+    activities: Array<ActivityEntryEntity | (ActivityEntryEntity & { canReview: boolean })>
+  ): {
+    totalEntries: number;
+    draftCount: number;
+    submittedCount: number;
+    approvedCount: number;
+    rejectedCount: number;
+    resubmittedCount: number;
+    pendingReviewCount: number;
+    uniqueDepartments: number;
+    latestActivityAt: string | null;
+  } {
+    const counters = {
+      draftCount: 0,
+      submittedCount: 0,
+      approvedCount: 0,
+      rejectedCount: 0,
+      resubmittedCount: 0
+    };
+    const departmentIds = new Set<string>();
+
+    for (const activity of activities) {
+      departmentIds.add(activity.workDepartmentId);
+      if (activity.status === "draft") {
+        counters.draftCount += 1;
+      } else if (activity.status === "submitted") {
+        counters.submittedCount += 1;
+      } else if (activity.status === "approved") {
+        counters.approvedCount += 1;
+      } else if (activity.status === "rejected") {
+        counters.rejectedCount += 1;
+      } else if (activity.status === "resubmitted") {
+        counters.resubmittedCount += 1;
+      }
+    }
+
+    return {
+      totalEntries: activities.length,
+      draftCount: counters.draftCount,
+      submittedCount: counters.submittedCount,
+      approvedCount: counters.approvedCount,
+      rejectedCount: counters.rejectedCount,
+      resubmittedCount: counters.resubmittedCount,
+      pendingReviewCount: counters.submittedCount + counters.resubmittedCount,
+      uniqueDepartments: departmentIds.size,
+      latestActivityAt: activities[0]?.createdAt ?? null
     };
   }
 }

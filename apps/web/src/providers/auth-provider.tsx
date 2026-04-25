@@ -4,6 +4,8 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendEmailVerification,
+  updateProfile,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut
@@ -23,7 +25,8 @@ interface AuthContextValue {
   isMockAuth: boolean;
   isFirebaseReady: boolean;
   signInEmail: (email: string, password: string) => Promise<void>;
-  signUpEmail: (email: string, password: string) => Promise<void>;
+  signUpEmail: (email: string, password: string, name: string) => Promise<void>;
+  resendEmailVerification: (email: string, password: string) => Promise<void>;
   signInGoogle: () => Promise<void>;
   signInMock: (user: AuthUserSnapshot) => Promise<void>;
   signOut: () => Promise<void>;
@@ -37,6 +40,18 @@ function toName(email?: string | null, fallbackId?: string): string {
     return fallbackId ?? "User";
   }
   return email.split("@")[0] || email;
+}
+
+async function sendVerificationEmailSafely(user: Parameters<typeof sendEmailVerification>[0]): Promise<void> {
+  if (typeof window !== "undefined") {
+    try {
+      await sendEmailVerification(user, { url: `${window.location.origin}/login` });
+      return;
+    } catch {
+      // Fallback to Firebase default action URL when continue URL is not allowed/configured.
+    }
+  }
+  await sendEmailVerification(user);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -83,9 +98,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setStatus("unauthenticated");
         return;
       }
+      if (!firebaseUser.email) {
+        setUser(null);
+        setStatus("unauthenticated");
+        return;
+      }
+      if (!firebaseUser.emailVerified) {
+        void firebaseSignOut(auth);
+        setUser(null);
+        setStatus("unauthenticated");
+        return;
+      }
       setUser({
         id: firebaseUser.uid,
-        email: firebaseUser.email ?? "unknown@example.com",
+        email: firebaseUser.email,
         name: firebaseUser.displayName ?? toName(firebaseUser.email, firebaseUser.uid)
       });
       setStatus("authenticated");
@@ -102,10 +128,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!auth) {
       throw new Error("Firebase auth is not configured.");
     }
-    await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    if (!credential.user.emailVerified) {
+      try {
+        await sendVerificationEmailSafely(credential.user);
+      } catch {
+        // Best effort: verification may already be sent or throttled.
+      }
+      await firebaseSignOut(auth);
+      throw new Error("Your email is not verified. A verification link has been sent. Verify and sign in again.");
+    }
   }, [isMockAuth]);
 
-  const signUpEmail = useCallback(async (email: string, password: string) => {
+  const signUpEmail = useCallback(async (email: string, password: string, name: string) => {
     if (isMockAuth) {
       throw new Error("Email signup is disabled while mock auth is enabled.");
     }
@@ -113,7 +148,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!auth) {
       throw new Error("Firebase auth is not configured.");
     }
-    await createUserWithEmailAndPassword(auth, email, password);
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    const trimmedName = name.trim();
+    if (trimmedName) {
+      await updateProfile(credential.user, { displayName: trimmedName });
+    }
+    await sendVerificationEmailSafely(credential.user);
+    await firebaseSignOut(auth);
+  }, [isMockAuth]);
+
+  const resendEmailVerification = useCallback(async (email: string, password: string) => {
+    if (isMockAuth) {
+      throw new Error("Email verification is disabled while mock auth is enabled.");
+    }
+    const auth = getFirebaseAuthInstance();
+    if (!auth) {
+      throw new Error("Firebase auth is not configured.");
+    }
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    if (credential.user.emailVerified) {
+      await firebaseSignOut(auth);
+      throw new Error("This account is already verified. You can sign in directly.");
+    }
+    await sendVerificationEmailSafely(credential.user);
+    await firebaseSignOut(auth);
   }, [isMockAuth]);
 
   const signInGoogle = useCallback(async () => {
@@ -169,6 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isFirebaseReady,
       signInEmail,
       signUpEmail,
+      resendEmailVerification,
       signInGoogle,
       signInMock,
       signOut,
@@ -183,6 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInMock,
       signOut,
       signUpEmail,
+      resendEmailVerification,
       status,
       user
     ]

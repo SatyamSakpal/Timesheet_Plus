@@ -54,7 +54,7 @@ export interface PermissionCatalogItem {
 
 export interface FieldCatalogItem {
   id: string;
-  key: "text" | "number" | "date" | "select" | "checkbox" | "textarea";
+  key: "text" | "number" | "date" | "select" | "radio" | "checkbox" | "textarea";
   name: string;
   description: string;
   supportsOptions: boolean;
@@ -87,7 +87,7 @@ export interface DepartmentEntity {
 export interface TaskFieldSchema {
   key: string;
   label: string;
-  type: "text" | "number" | "date" | "select" | "checkbox" | "textarea";
+  type: "text" | "number" | "date" | "select" | "radio" | "checkbox" | "textarea";
   required: boolean;
   options?: string[];
   min?: number;
@@ -118,6 +118,9 @@ export interface ActivityEntry {
   taskTemplateId: string;
   taskTemplateName: string;
   taskTemplateVersion: number;
+  activityDate: string;
+  startTime: string;
+  endTime: string;
   taskSchemaSnapshot: TaskFieldSchema[];
   payload: Record<string, unknown>;
   status: ActivityStatus;
@@ -185,6 +188,12 @@ export interface DepartmentPersonCompact {
   name: string;
 }
 
+export interface DepartmentHodCompact extends DepartmentPersonCompact {
+  assignedBy: string;
+  assignedByName: string | null;
+  assignedAt: string;
+}
+
 export interface DepartmentContributorCompact extends DepartmentPersonCompact {
   entryCount: number;
   latestEntryAt: string | null;
@@ -222,4 +231,34 @@ export interface TenantUsersDirectoryResponse {
   scope: "owner" | "hod";
   managedDepartmentIds: string[];
   users: TenantUsersDirectoryItem[];
+}
+
+export interface TenantUserDetailActivity extends ActivityEntry {
+  canReview: boolean;
+}
+
+export interface TenantUserActivityStats {
+  totalEntries: number;
+  draftCount: number;
+  submittedCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  resubmittedCount: number;
+  pendingReviewCount: number;
+  uniqueDepartments: number;
+  latestActivityAt: string | null;
+}
+
+export interface TenantUserDetailResponse {
+  scope: "owner" | "hod";
+  managedDepartmentIds: string[];
+  viewerCanManageMember: boolean;
+  user: TenantUsersDirectoryItem;
+  stats: TenantUserActivityStats;
+  activities: TenantUserDetailActivity[];
+  availableHomeDepartments: Array<{
+    id: string;
+    name: string;
+  }>;
+  departmentNameById: Record<string, string>;
 }

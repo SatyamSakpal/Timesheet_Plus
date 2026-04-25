@@ -16,7 +16,7 @@ export function TaskTemplateSelect({
 }) {
   return (
     <div>
-      <Label htmlFor="task-template-select">Task Template</Label>
+      <Label htmlFor="task-template-select">Task</Label>
       <Select
         id="task-template-select"
         value={value}
@@ -24,7 +24,7 @@ export function TaskTemplateSelect({
         disabled={disabled}
         required
       >
-        <option value="">{disabled ? "Select department first" : "Select task template"}</option>
+        <option value="">{disabled ? "Select department first" : "Select task"}</option>
         {templates.map((template) => (
           <option key={template.id} value={template.id}>
             {template.name} (v{template.version})

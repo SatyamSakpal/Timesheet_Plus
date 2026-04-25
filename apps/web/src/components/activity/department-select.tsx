@@ -17,7 +17,7 @@ export function DepartmentSelect({
 }) {
   const departments = useAppStore((state) => state.knownDepartmentsByTenant[tenantId] ?? []);
   const addKnownDepartment = useAppStore((state) => state.addKnownDepartment);
-  const [manualDepartmentId, setManualDepartmentId] = useState("");
+  const [manualDepartmentRef, setManualDepartmentRef] = useState("");
 
   const options = useMemo(() => {
     if (!homeDepartmentId) {
@@ -43,35 +43,35 @@ export function DepartmentSelect({
           <option value="">Select department</option>
           {options.map((department) => (
             <option key={department.id} value={department.id}>
-              {department.name ? `${department.name} (${department.id})` : department.id}
+              {department.name || "Unnamed department"}
             </option>
           ))}
         </Select>
       </div>
       <div className="flex gap-2">
         <Input
-          value={manualDepartmentId}
-          onChange={(event) => setManualDepartmentId(event.target.value)}
-          placeholder="Add department id manually"
+          value={manualDepartmentRef}
+          onChange={(event) => setManualDepartmentRef(event.target.value)}
+          placeholder="Add department manually"
         />
         <Button
           type="button"
           variant="ghost"
           onClick={() => {
-            const departmentId = manualDepartmentId.trim();
+            const departmentId = manualDepartmentRef.trim();
             if (!departmentId) {
               return;
             }
             addKnownDepartment(tenantId, { id: departmentId });
             onChange(departmentId);
-            setManualDepartmentId("");
+            setManualDepartmentRef("");
           }}
         >
           Add
         </Button>
       </div>
       <p className="text-xs text-brand-moss">
-        Backend currently exposes department-specific queries. Add department IDs once and reuse them.
+        If a department is missing, you can add it manually and reuse it later.
       </p>
     </div>
   );

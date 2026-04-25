@@ -185,6 +185,48 @@ export class TenantRoleService extends PlatformCoreService {
     );
   }
 
+  async deleteRole(
+    tenantId: string,
+    roleId: string,
+    actorUserId: string
+  ): Promise<TenantRoleEntity> {
+    await this.getTenantOrThrow(tenantId);
+    const role = await this.store.getById<TenantRoleEntity>(COLLECTIONS.tenantRoles, roleId);
+    if (!role || role.tenantId !== tenantId) {
+      notFound("Role not found");
+    }
+    if (role.isSystem) {
+      badRequest("System roles cannot be deleted");
+    }
+
+    const memberships = await this.store.query<TenantMembershipEntity>(COLLECTIONS.tenantMemberships, [
+      { field: "tenantId", op: "==", value: tenantId }
+    ]);
+    const assignedMemberships = memberships.filter((membership) => membership.roleIds.includes(roleId));
+    if (assignedMemberships.length > 0) {
+      const users = await this.getUsersByIds(assignedMemberships.map((membership) => membership.userId));
+      const userMap = new Map(users.map((user) => [user.id, user]));
+      const assignedUsers = assignedMemberships
+        .map((membership) => {
+          const user = userMap.get(membership.userId);
+          const name = user?.name ?? membership.userId;
+          const email = user?.email ?? "unknown@example.com";
+          return `${name} (${email})`;
+        })
+        .sort((left, right) => left.localeCompare(right));
+
+      badRequest(
+        `Cannot delete role "${role.name}" because it is assigned to: ${assignedUsers.join(", ")}`
+      );
+    }
+
+    await this.store.delete(COLLECTIONS.tenantRoles, role.id);
+    await this.createAuditLog(tenantId, actorUserId, "role.delete", "role", role.id, {
+      name: role.name
+    });
+    return role;
+  }
+
   async assignRolesToMember(
     tenantId: string,
     memberUserId: string,
@@ -316,6 +358,64 @@ export class TenantRoleService extends PlatformCoreService {
     await this.createAuditLog(tenantId, actorUserId, "membership.add", "membership", membership.id, {
       memberUserId: input.userId,
       homeDepartmentId: input.homeDepartmentId
+    });
+    return membership;
+  }
+
+  async removeTenantMember(
+    tenantId: string,
+    memberUserId: string,
+    actorUserId: string
+  ): Promise<TenantMembershipEntity> {
+    const tenant = await this.getTenantOrThrow(tenantId);
+    if (tenant.ownerIds.includes(memberUserId)) {
+      badRequest("Tenant owner cannot be removed");
+    }
+    if (memberUserId === actorUserId) {
+      badRequest("You cannot remove yourself from this tenant");
+    }
+
+    const membershipId = tenantMembershipId(tenantId, memberUserId);
+    const membership = await this.store.getById<TenantMembershipEntity>(
+      COLLECTIONS.tenantMemberships,
+      membershipId
+    );
+    if (!membership) {
+      notFound("Member not found in tenant");
+    }
+
+    const [departmentMemberships, departmentHodAssignments] = await Promise.all([
+      this.store.query<{
+        id: string;
+        departmentId: string;
+      }>(COLLECTIONS.departmentMemberships, [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "userId", op: "==", value: memberUserId }
+      ]),
+      this.store.query<{
+        id: string;
+        departmentId: string;
+      }>(COLLECTIONS.departmentHods, [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "userId", op: "==", value: memberUserId }
+      ])
+    ]);
+
+    await this.store.delete(COLLECTIONS.tenantMemberships, membershipId);
+
+    await Promise.all([
+      ...departmentMemberships.map((record) =>
+        this.store.delete(COLLECTIONS.departmentMemberships, record.id)
+      ),
+      ...departmentHodAssignments.map((record) =>
+        this.store.delete(COLLECTIONS.departmentHods, record.id)
+      )
+    ]);
+
+    await this.createAuditLog(tenantId, actorUserId, "membership.remove", "membership", membershipId, {
+      memberUserId,
+      removedDepartmentMembershipCount: departmentMemberships.length,
+      removedHodAssignmentCount: departmentHodAssignments.length
     });
     return membership;
   }

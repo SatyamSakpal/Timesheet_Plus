@@ -11,7 +11,8 @@ import {
   assignRoleSchema,
   createRoleSchema,
   createTenantSchema,
-  inviteMemberSchema
+  inviteMemberSchema,
+  updateMemberHomeDepartmentSchema
 } from "./schemas/tenant.schemas";
 
 const router = Router();
@@ -76,12 +77,23 @@ scopedTenantRouter.post(
 
 scopedTenantRouter.get(
   "/roles",
-  requirePermission(PERMISSIONS.roleManage),
   asyncHandler(async (req, res) => {
     const service = getPlatformService();
     const tenantId = param(req, "tenantId");
     const roles = await service.listRoles(tenantId);
     res.json({ data: roles });
+  })
+);
+
+scopedTenantRouter.delete(
+  "/roles/:roleId",
+  requirePermission(PERMISSIONS.roleManage),
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const roleId = param(req, "roleId");
+    const deletedRole = await service.deleteRole(tenantId, roleId, req.user!.uid);
+    res.json({ data: deletedRole });
   })
 );
 
@@ -103,6 +115,35 @@ scopedTenantRouter.get(
     const tenantId = param(req, "tenantId");
     const directory = await service.listTenantUsersForOwnerOrHod(tenantId, req.user!.uid);
     res.json({ data: directory });
+  })
+);
+
+scopedTenantRouter.get(
+  "/users/:userId",
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const userId = param(req, "userId");
+    const detail = await service.getTenantUserDetailForOwnerOrHod(tenantId, req.user!.uid, userId);
+    res.json({ data: detail });
+  })
+);
+
+scopedTenantRouter.patch(
+  "/users/:userId/home-department",
+  requirePermission(PERMISSIONS.memberManage),
+  asyncHandler(async (req, res) => {
+    const input = updateMemberHomeDepartmentSchema.parse(req.body);
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const userId = param(req, "userId");
+    const membership = await service.updateTenantMemberHomeDepartment(
+      tenantId,
+      userId,
+      req.user!.uid,
+      input.homeDepartmentId
+    );
+    res.json({ data: membership });
   })
 );
 
@@ -138,6 +179,18 @@ scopedTenantRouter.post(
     const tenantId = param(req, "tenantId");
     const membership = await service.addTenantMember(tenantId, input, req.user!.uid);
     res.status(201).json({ data: membership });
+  })
+);
+
+scopedTenantRouter.delete(
+  "/members/:memberUserId",
+  requirePermission(PERMISSIONS.memberManage),
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const memberUserId = param(req, "memberUserId");
+    const membership = await service.removeTenantMember(tenantId, memberUserId, req.user!.uid);
+    res.json({ data: membership });
   })
 );
 

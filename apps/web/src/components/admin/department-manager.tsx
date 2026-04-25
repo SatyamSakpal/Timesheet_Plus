@@ -71,7 +71,7 @@ export function DepartmentManager({ tenantId }: { tenantId: string }) {
     const departmentId = targetDepartmentId.trim();
     const userId = targetUserId.trim();
     if (!departmentId || !userId) {
-      setError("Department ID and User ID are required.");
+      setError("Department and user references are required.");
       return;
     }
     if (kind === "hod") {
@@ -84,7 +84,7 @@ export function DepartmentManager({ tenantId }: { tenantId: string }) {
   return (
     <div className="space-y-4">
       <Card>
-        <SectionTitle title="Create Department" subtitle="Stores department id locally for quick reuse." />
+        <SectionTitle title="Create Department" subtitle="Stores the created department reference for quick reuse." />
         <form className="space-y-3" onSubmit={onCreateDepartment}>
           <div>
             <Label htmlFor="department-name">Department Name</Label>
@@ -110,7 +110,7 @@ export function DepartmentManager({ tenantId }: { tenantId: string }) {
         </form>
         {lastCreated ? (
           <p className="mt-3 text-sm text-brand-moss">
-            Last created: <strong>{lastCreated.name}</strong> ({lastCreated.id})
+            Last created: <strong>{lastCreated.name}</strong>
           </p>
         ) : null}
       </Card>
@@ -119,7 +119,7 @@ export function DepartmentManager({ tenantId }: { tenantId: string }) {
         <SectionTitle title="Assign HOD / Member" subtitle="Assign users after tenant membership is active." />
         <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <Label htmlFor="target-department-id">Department ID</Label>
+            <Label htmlFor="target-department-id">Department Reference</Label>
             <Input
               id="target-department-id"
               value={targetDepartmentId}
@@ -128,7 +128,7 @@ export function DepartmentManager({ tenantId }: { tenantId: string }) {
             />
           </div>
           <div>
-            <Label htmlFor="target-user-id">User ID</Label>
+            <Label htmlFor="target-user-id">User Reference</Label>
             <Input
               id="target-user-id"
               value={targetUserId}

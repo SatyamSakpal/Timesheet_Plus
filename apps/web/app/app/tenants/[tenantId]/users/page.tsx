@@ -6,11 +6,14 @@ import { useRouter } from "next/navigation";
 import { TenantRequired } from "@/components/layout/tenant-required";
 import { useActiveTenant } from "@/hooks/use-active-tenant";
 import { useApiClient } from "@/hooks/use-api-client";
+import { useTenantPermissions } from "@/hooks/use-tenant-permissions";
+import { PERMISSIONS } from "@/lib/constants";
 import { queryKeys } from "@/lib/query-keys";
 import { tenantRoutes } from "@/lib/tenant-routes";
 import type {
   DepartmentEntity,
   InviteResult,
+  TenantMemberListItem,
   TenantRole,
   TenantUsersDirectoryResponse
 } from "@/lib/types";
@@ -33,12 +36,16 @@ export default function TenantUsersPage() {
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
   const { activeTenantId, activeMembership } = useActiveTenant();
+  const { permissions } = useTenantPermissions();
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRoleId, setInviteRoleId] = useState("");
   const [inviteDepartmentId, setInviteDepartmentId] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeSuccess, setRemoveSuccess] = useState<string | null>(null);
+  const [selectedUserForRemoval, setSelectedUserForRemoval] = useState<TenantUsersDirectoryResponse["users"][number] | null>(null);
 
   const usersQuery = useQuery({
     queryKey: activeTenantId ? queryKeys.tenantUsersDirectory(activeTenantId) : ["tenant-users-directory", "none"],
@@ -91,17 +98,62 @@ export default function TenantUsersPage() {
     }
   });
 
+  const removeMemberMutation = useMutation({
+    mutationFn: async (user: TenantUsersDirectoryResponse["users"][number]) => {
+      if (!activeTenantId) {
+        throw new Error("No active tenant selected.");
+      }
+      return apiClient.delete<TenantMemberListItem>(`/v1/tenants/${activeTenantId}/members/${user.userId}`);
+    },
+    onSuccess: async (_response, removedUser) => {
+      if (!activeTenantId) {
+        return;
+      }
+      setRemoveError(null);
+      setRemoveSuccess(`${removedUser.name} (${removedUser.email}) was removed from the tenant.`);
+      setSelectedUserForRemoval(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.tenantUsersDirectory(activeTenantId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tenantMembers(activeTenantId) })
+      ]);
+    },
+    onError: (nextError) => {
+      setRemoveError(nextError instanceof Error ? nextError.message : "Failed to remove user.");
+    }
+  });
+
   const departmentNameById = useMemo(
     () => new Map((departmentsQuery.data ?? []).map((department) => [department.id, department.name])),
     [departmentsQuery.data]
+  );
+  const formatDepartment = (departmentId: string) =>
+    departmentNameById.get(departmentId) ?? "Unknown department";
+
+  const canManageMembers =
+    activeMembership?.isOwner || permissions.has(PERMISSIONS.memberManage);
+
+  const directory = usersQuery.data;
+  const scopeLabel = directory?.scope === "owner" ? "Owner Scope" : "Department Head Scope";
+
+  const hodMemberUsers = useMemo(
+    () =>
+      (directory?.scope === "hod" ? directory.users : []).filter(
+        (user) => user.visibility === "member" || user.visibility === "member+contributor"
+      ),
+    [directory]
+  );
+
+  const hodContributorUsers = useMemo(
+    () =>
+      (directory?.scope === "hod" ? directory.users : []).filter(
+      (user) => user.visibility === "contributor" || user.visibility === "member+contributor"
+      ),
+    [directory]
   );
 
   if (!activeTenantId || !activeMembership) {
     return <TenantRequired />;
   }
-
-  const directory = usersQuery.data;
-  const scopeLabel = directory?.scope === "owner" ? "Owner Scope" : "Department Head Scope";
 
   function openAddUserModal() {
     setInviteError(null);
@@ -137,6 +189,27 @@ export default function TenantUsersPage() {
     });
   }
 
+  function openRemoveUserModal(user: TenantUsersDirectoryResponse["users"][number]) {
+    setRemoveError(null);
+    setRemoveSuccess(null);
+    setSelectedUserForRemoval(user);
+  }
+
+  function closeRemoveUserModal() {
+    if (removeMemberMutation.isPending) {
+      return;
+    }
+    setSelectedUserForRemoval(null);
+    setRemoveError(null);
+  }
+
+  function onRemoveMemberConfirm() {
+    if (!selectedUserForRemoval) {
+      return;
+    }
+    removeMemberMutation.mutate(selectedUserForRemoval);
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
@@ -163,10 +236,20 @@ export default function TenantUsersPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             {directory.managedDepartmentIds.map((departmentId) => (
               <span key={departmentId} className="rounded-full bg-[#eff6ff] px-3 py-1 text-xs font-semibold text-[#1d4ed8]">
-                {departmentNameById.get(departmentId) ?? departmentId}
+                {formatDepartment(departmentId)}
               </span>
             ))}
           </div>
+        ) : null}
+        {removeError ? (
+          <p className="mt-3 rounded-lg border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-sm text-[#b42318]">
+            {removeError}
+          </p>
+        ) : null}
+        {removeSuccess ? (
+          <p className="mt-3 rounded-lg border border-[#bbf7d0] bg-[#f0fdf4] px-3 py-2 text-sm text-[#166534]">
+            {removeSuccess}
+          </p>
         ) : null}
       </section>
 
@@ -200,11 +283,17 @@ export default function TenantUsersPage() {
               {(directory?.users ?? []).map((user) => (
                 <tr key={user.userId} className="border-b border-[#e2e8f0] last:border-b-0">
                   <td className="px-5 py-4">
-                    <p className="font-semibold text-[#0f172a]">{user.name}</p>
+                    <button
+                      type="button"
+                      className="text-left font-semibold text-[#0f172a] hover:text-[#1d4ed8] hover:underline"
+                      onClick={() => router.push(tenantRoutes.userDetail(activeTenantId, user.userId))}
+                    >
+                      {user.name}
+                    </button>
                     <p className="text-xs text-[#64748b]">{user.email}</p>
                   </td>
                   <td className="px-5 py-4">
-                    {user.homeDepartmentId ? departmentNameById.get(user.homeDepartmentId) ?? user.homeDepartmentId : "Unassigned"}
+                    {user.homeDepartmentId ? formatDepartment(user.homeDepartmentId) : "Unassigned"}
                   </td>
                   <td className="px-5 py-4">
                     <span className="rounded-full bg-[#dbeafe] px-2 py-1 text-[11px] font-semibold uppercase text-[#1d4ed8]">
@@ -215,31 +304,41 @@ export default function TenantUsersPage() {
                     <span className="text-xs font-semibold text-[#475569]">{labelByVisibility(user.visibility)}</span>
                   </td>
                   <td className="px-5 py-4 text-right">
-                    {directory?.scope === "owner" ? (
+                    <div className="flex flex-wrap justify-end gap-3">
                       <button
                         type="button"
                         className="text-sm font-semibold text-[#1d4ed8]"
-                        onClick={() => router.push(tenantRoutes.adminRoles(activeTenantId))}
+                        onClick={() => router.push(tenantRoutes.userDetail(activeTenantId, user.userId))}
                       >
-                        Manage Roles
+                        Open Profile
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="text-sm font-semibold text-[#1d4ed8]"
-                        onClick={() =>
-                          router.push(
-                            tenantRoutes.hodDepartmentMembers(
-                              activeTenantId,
-                              user.departmentIds[0] ?? directory?.managedDepartmentIds[0] ?? ""
+                      {directory?.scope !== "owner" ? (
+                        <button
+                          type="button"
+                          className="text-sm font-semibold text-[#1d4ed8]"
+                          onClick={() =>
+                            router.push(
+                              tenantRoutes.hodDepartmentMembers(
+                                activeTenantId,
+                                user.departmentIds[0] ?? directory?.managedDepartmentIds[0] ?? ""
+                              )
                             )
-                          )
-                        }
-                        disabled={!user.departmentIds[0] && !directory?.managedDepartmentIds[0]}
-                      >
-                        Open Department
-                      </button>
-                    )}
+                          }
+                          disabled={!user.departmentIds[0] && !directory?.managedDepartmentIds[0]}
+                        >
+                          Open Department
+                        </button>
+                      ) : null}
+                      {canManageMembers && !user.isOwner && user.userId !== activeMembership.userId ? (
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-[#b42318] hover:text-[#7f1d1d]"
+                          onClick={() => openRemoveUserModal(user)}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -254,6 +353,133 @@ export default function TenantUsersPage() {
           </table>
         </div>
       </section>
+
+      {directory?.scope === "hod" ? (
+        <>
+          <section className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+            <h2 className="text-lg font-semibold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+              Department Members
+            </h2>
+            <p className="mt-1 text-sm text-[#64748b]">Members visible inside your managed departments.</p>
+            {hodMemberUsers.length === 0 ? (
+              <p className="mt-3 text-sm text-[#64748b]">No department members available in your current scope.</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {hodMemberUsers.map((user) => (
+                  <li
+                    key={`member-${user.userId}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e2e8f0] px-3 py-2"
+                  >
+                    <div>
+                      <button
+                        type="button"
+                        className="text-left font-semibold text-[#0f172a] hover:text-[#1d4ed8] hover:underline"
+                        onClick={() => router.push(tenantRoutes.userDetail(activeTenantId, user.userId))}
+                      >
+                        {user.name}
+                      </button>
+                      <p className="text-xs text-[#64748b]">{user.email}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-[#475569]">{labelByVisibility(user.visibility)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+            <h2 className="text-lg font-semibold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+              Contributors
+            </h2>
+            <p className="mt-1 text-sm text-[#64748b]">
+              Users who have logged activity in your departments, including cross-department contributors.
+            </p>
+            {hodContributorUsers.length === 0 ? (
+              <p className="mt-3 text-sm text-[#64748b]">No contributors available in your current scope.</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {hodContributorUsers.map((user) => (
+                  <li
+                    key={`contributor-${user.userId}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e2e8f0] px-3 py-2"
+                  >
+                    <div>
+                      <button
+                        type="button"
+                        className="text-left font-semibold text-[#0f172a] hover:text-[#1d4ed8] hover:underline"
+                        onClick={() => router.push(tenantRoutes.userDetail(activeTenantId, user.userId))}
+                      >
+                        {user.name}
+                      </button>
+                      <p className="text-xs text-[#64748b]">{user.email}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-[#475569]">{labelByVisibility(user.visibility)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {selectedUserForRemoval ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/55 p-4"
+          onClick={closeRemoveUserModal}
+        >
+          <section
+            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+                  Remove User
+                </h2>
+                <p className="mt-1 text-sm text-[#64748b]">
+                  This will remove the user from the tenant and department assignments.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md px-2 py-1 text-sm font-semibold text-[#64748b] hover:bg-[#f1f5f9]"
+                onClick={closeRemoveUserModal}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-3">
+              <p className="font-semibold text-[#0f172a]">{selectedUserForRemoval.name}</p>
+              <p className="text-sm text-[#64748b]">{selectedUserForRemoval.email}</p>
+            </div>
+
+            {removeError ? (
+              <p className="mt-4 rounded-lg border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-sm text-[#b42318]">
+                {removeError}
+              </p>
+            ) : null}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                onClick={closeRemoveUserModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-[#b42318] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={onRemoveMemberConfirm}
+                disabled={removeMemberMutation.isPending}
+              >
+                {removeMemberMutation.isPending ? "Removing..." : "Remove User"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {isAddUserModalOpen ? (
         <div
@@ -285,7 +511,7 @@ export default function TenantUsersPage() {
             <form className="mt-5 space-y-4" onSubmit={onInviteSubmit}>
               <div>
                 <label htmlFor="invite-email" className="mb-1 block text-xs font-semibold uppercase tracking-[0.06em] text-[#475569]">
-                  Email ID
+                  Email
                 </label>
                 <input
                   id="invite-email"

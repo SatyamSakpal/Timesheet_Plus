@@ -132,13 +132,21 @@ export const FIELD_CATALOG_SEED: FieldCatalogSeed[] = [
     order: 5
   },
   {
+    key: "radio",
+    name: "Radio",
+    description: "Single-choice radio input with predefined options.",
+    supportsOptions: true,
+    supportsNumericRange: false,
+    configurable: true,
+    order: 6
+  },
+  {
     key: "checkbox",
     name: "Checkbox",
     description: "Boolean true/false input.",
     supportsOptions: false,
     supportsNumericRange: false,
     configurable: true,
-    order: 6
+    order: 7
   }
 ];
-

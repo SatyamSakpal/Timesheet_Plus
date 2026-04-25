@@ -1,15 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { TenantRequired } from "@/components/layout/tenant-required";
 import { useActiveTenant } from "@/hooks/use-active-tenant";
 import { useApiClient } from "@/hooks/use-api-client";
 import { useMeQuery } from "@/hooks/use-me";
+import { useTenantPermissions } from "@/hooks/use-tenant-permissions";
+import { PERMISSIONS } from "@/lib/constants";
 import { queryKeys } from "@/lib/query-keys";
 import { tenantRoutes } from "@/lib/tenant-routes";
-import type { DepartmentEntity, DepartmentPersonCompact, TenantMemberListItem } from "@/lib/types";
+import type {
+  ActivityEntry,
+  DepartmentEntity,
+  DepartmentPersonCompact,
+  TenantMemberListItem,
+  TenantUsersDirectoryResponse
+} from "@/lib/types";
 
 function metricFromSeed(seed: string, base: number, span: number) {
   let hash = 0;
@@ -24,20 +32,30 @@ export default function TenantOwnerPage() {
   const apiClient = useApiClient();
   const { activeTenantId, activeMembership } = useActiveTenant();
   const meQuery = useMeQuery();
+  const { permissions } = useTenantPermissions();
+  const [hodDepartmentFilter, setHodDepartmentFilter] = useState("all");
 
   const tenantName = activeMembership?.tenantName ?? "Owner Institution";
   const userName = meQuery.data?.user.name ?? "Institution Owner";
+  const canAccessHodDashboard =
+    permissions.has(PERMISSIONS.activityApprove) || permissions.has(PERMISSIONS.reportView);
 
   const membersQuery = useQuery({
     queryKey: activeTenantId ? queryKeys.tenantMembers(activeTenantId) : ["tenant-members", "none"],
     queryFn: () => apiClient.get<TenantMemberListItem[]>(`/v1/tenants/${activeTenantId}/members`),
-    enabled: Boolean(activeTenantId)
+    enabled: Boolean(activeTenantId && activeMembership?.isOwner)
   });
 
   const departmentsQuery = useQuery({
     queryKey: activeTenantId ? queryKeys.tenantDepartments(activeTenantId) : ["tenant-departments", "none"],
     queryFn: () => apiClient.get<DepartmentEntity[]>(`/v1/tenants/${activeTenantId}/departments`),
     enabled: Boolean(activeTenantId)
+  });
+
+  const usersDirectoryQuery = useQuery({
+    queryKey: activeTenantId ? queryKeys.tenantUsersDirectory(activeTenantId) : ["tenant-users-directory", "none"],
+    queryFn: () => apiClient.get<TenantUsersDirectoryResponse>(`/v1/tenants/${activeTenantId}/users`),
+    enabled: Boolean(activeTenantId && activeMembership && !activeMembership.isOwner && canAccessHodDashboard)
   });
 
   const departmentIds = useMemo(
@@ -48,6 +66,8 @@ export default function TenantOwnerPage() {
     () => new Map((departmentsQuery.data ?? []).map((department) => [department.id, department.name])),
     [departmentsQuery.data]
   );
+  const formatDepartment = (departmentId: string) =>
+    departmentNameById.get(departmentId) ?? "Unknown department";
 
   const departmentMemberCountsQuery = useQuery({
     queryKey:
@@ -65,8 +85,87 @@ export default function TenantOwnerPage() {
       );
       return Object.fromEntries(entries) as Record<string, number>;
     },
-    enabled: Boolean(activeTenantId && departmentIds.length)
+    enabled: Boolean(activeTenantId && activeMembership?.isOwner && departmentIds.length)
   });
+
+  const managedDepartmentIds = useMemo(
+    () =>
+      usersDirectoryQuery.data?.scope === "hod"
+        ? usersDirectoryQuery.data.managedDepartmentIds
+        : [],
+    [usersDirectoryQuery.data]
+  );
+
+  const effectiveHodFilter =
+    hodDepartmentFilter === "all" || managedDepartmentIds.includes(hodDepartmentFilter)
+      ? hodDepartmentFilter
+      : "all";
+
+  const hodIncludedDepartmentIds = useMemo(
+    () => (effectiveHodFilter === "all" ? managedDepartmentIds : [effectiveHodFilter]),
+    [effectiveHodFilter, managedDepartmentIds]
+  );
+
+  const hodDepartmentStatsQuery = useQuery({
+    queryKey:
+      activeTenantId && hodIncludedDepartmentIds.length
+        ? ["hod-dashboard-department-stats", activeTenantId, hodIncludedDepartmentIds]
+        : ["hod-dashboard-department-stats", "none"],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        hodIncludedDepartmentIds.map(async (departmentId) => {
+          const activities = await apiClient.get<ActivityEntry[]>(
+            `/v1/tenants/${activeTenantId}/departments/${departmentId}/activities`
+          );
+          const summary = {
+            departmentId,
+            totalLogs: activities.length,
+            draftCount: 0,
+            pendingReviewCount: 0,
+            approvedCount: 0,
+            rejectedCount: 0
+          };
+          for (const activity of activities) {
+            if (activity.status === "draft") {
+              summary.draftCount += 1;
+            } else if (activity.status === "submitted" || activity.status === "resubmitted") {
+              summary.pendingReviewCount += 1;
+            } else if (activity.status === "approved") {
+              summary.approvedCount += 1;
+            } else if (activity.status === "rejected") {
+              summary.rejectedCount += 1;
+            }
+          }
+          return summary;
+        })
+      );
+      return entries.sort((left, right) => {
+        const leftName = formatDepartment(left.departmentId);
+        const rightName = formatDepartment(right.departmentId);
+        return leftName.localeCompare(rightName);
+      });
+    },
+    enabled: Boolean(activeTenantId && !activeMembership?.isOwner && hodIncludedDepartmentIds.length)
+  });
+
+  const hodAggregateStats = useMemo(() => {
+    return (hodDepartmentStatsQuery.data ?? []).reduce(
+      (accumulator, department) => ({
+        totalLogs: accumulator.totalLogs + department.totalLogs,
+        draftCount: accumulator.draftCount + department.draftCount,
+        pendingReviewCount: accumulator.pendingReviewCount + department.pendingReviewCount,
+        approvedCount: accumulator.approvedCount + department.approvedCount,
+        rejectedCount: accumulator.rejectedCount + department.rejectedCount
+      }),
+      {
+        totalLogs: 0,
+        draftCount: 0,
+        pendingReviewCount: 0,
+        approvedCount: 0,
+        rejectedCount: 0
+      }
+    );
+  }, [hodDepartmentStatsQuery.data]);
 
   const stats = useMemo(() => {
     const seed = activeMembership?.tenantId ?? "owner";
@@ -102,6 +201,131 @@ export default function TenantOwnerPage() {
 
   if (!activeMembership) {
     return <TenantRequired />;
+  }
+
+  if (!activeMembership.isOwner && canAccessHodDashboard && usersDirectoryQuery.isLoading) {
+    return (
+      <section className="rounded-2xl bg-white p-8 shadow-[0_12px_32px_rgba(25,28,29,0.06)]">
+        <h1 className="text-2xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+          Loading dashboard
+        </h1>
+        <p className="mt-2 text-sm text-[#64748b]">Resolving your department dashboard scope...</p>
+      </section>
+    );
+  }
+
+  if (!activeMembership.isOwner && usersDirectoryQuery.data?.scope === "hod") {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[32px] font-bold leading-9 text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+                {tenantName} HOD Dashboard
+              </h2>
+              <p className="mt-1 text-sm text-[#424654]">
+                Department-level stats for {userName}. Data scope:{" "}
+                {hodIncludedDepartmentIds.length === 1
+                  ? formatDepartment(hodIncludedDepartmentIds[0])
+                  : "All managed departments"}
+                .
+              </p>
+            </div>
+            <div className="w-full max-w-[280px]">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.06em] text-[#475569]">
+                Department Filter
+              </label>
+              <select
+                className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm text-[#0f172a] outline-none transition focus:border-[#0d56d0] focus:ring-2 focus:ring-[#bfdbfe]"
+                value={effectiveHodFilter}
+                onChange={(event) => setHodDepartmentFilter(event.target.value)}
+              >
+                <option value="all">All Managed Departments</option>
+                {managedDepartmentIds.map((departmentId) => (
+                  <option key={departmentId} value={departmentId}>
+                    {formatDepartment(departmentId)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {hodIncludedDepartmentIds.map((departmentId) => (
+              <span key={departmentId} className="rounded-full bg-[#eff6ff] px-3 py-1 text-xs font-semibold text-[#1d4ed8]">
+                {formatDepartment(departmentId)}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-4">
+          <article className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+            <p className="text-xs font-medium text-[#424654]">Total Logs</p>
+            <p className="mt-2 text-[34px] font-bold text-[#0f172a]">{hodAggregateStats.totalLogs.toLocaleString()}</p>
+          </article>
+          <article className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+            <p className="text-xs font-medium text-[#424654]">Pending Review</p>
+            <p className="mt-2 text-[34px] font-bold text-[#0f172a]">{hodAggregateStats.pendingReviewCount.toLocaleString()}</p>
+          </article>
+          <article className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+            <p className="text-xs font-medium text-[#424654]">Approved</p>
+            <p className="mt-2 text-[34px] font-bold text-[#0f172a]">{hodAggregateStats.approvedCount.toLocaleString()}</p>
+          </article>
+          <article className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+            <p className="text-xs font-medium text-[#424654]">Rejected</p>
+            <p className="mt-2 text-[34px] font-bold text-[#0f172a]">{hodAggregateStats.rejectedCount.toLocaleString()}</p>
+          </article>
+        </section>
+
+        <section className="rounded-xl bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.04)]">
+          <h3 className="text-lg font-semibold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+            Department Breakdown
+          </h3>
+          {hodDepartmentStatsQuery.isLoading ? (
+            <p className="mt-3 text-sm text-[#64748b]">Loading department stats...</p>
+          ) : null}
+          {hodDepartmentStatsQuery.error ? (
+            <p className="mt-3 text-sm text-[#b42318]">
+              {hodDepartmentStatsQuery.error instanceof Error
+                ? hodDepartmentStatsQuery.error.message
+                : "Failed to load department stats."}
+            </p>
+          ) : null}
+          {(hodDepartmentStatsQuery.data ?? []).length ? (
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[#f3f4f5] text-xs uppercase tracking-[0.05em] text-[#64748b]">
+                  <tr>
+                    <th className="px-4 py-3">Department</th>
+                    <th className="px-4 py-3">Total</th>
+                    <th className="px-4 py-3">Draft</th>
+                    <th className="px-4 py-3">Pending</th>
+                    <th className="px-4 py-3">Approved</th>
+                    <th className="px-4 py-3">Rejected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(hodDepartmentStatsQuery.data ?? []).map((row) => (
+                    <tr key={row.departmentId} className="border-b border-[#e2e8f0] last:border-b-0">
+                      <td className="px-4 py-3 font-semibold text-[#0f172a]">
+                        {formatDepartment(row.departmentId)}
+                      </td>
+                      <td className="px-4 py-3">{row.totalLogs}</td>
+                      <td className="px-4 py-3">{row.draftCount}</td>
+                      <td className="px-4 py-3">{row.pendingReviewCount}</td>
+                      <td className="px-4 py-3">{row.approvedCount}</td>
+                      <td className="px-4 py-3">{row.rejectedCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : !hodDepartmentStatsQuery.isLoading ? (
+            <p className="mt-3 text-sm text-[#64748b]">No department data available in your current scope.</p>
+          ) : null}
+        </section>
+      </div>
+    );
   }
 
   if (!activeMembership.isOwner) {
@@ -197,12 +421,18 @@ export default function TenantOwnerPage() {
                 {(membersQuery.data ?? []).slice(0, 8).map((member) => (
                   <tr key={member.id} className="border-b border-[#e2e8f0] last:border-b-0">
                     <td className="px-5 py-4">
-                      <p className="font-semibold text-[#0f172a]">{member.name}</p>
+                      <button
+                        type="button"
+                        className="text-left font-semibold text-[#0f172a] hover:text-[#1d4ed8] hover:underline"
+                        onClick={() => router.push(tenantRoutes.userDetail(activeMembership.tenantId, member.userId))}
+                      >
+                        {member.name}
+                      </button>
                       <p className="text-xs text-[#64748b]">{member.email}</p>
                     </td>
                     <td className="px-5 py-4">
                       {member.homeDepartmentId
-                        ? departmentNameById.get(member.homeDepartmentId) ?? member.homeDepartmentId
+                        ? formatDepartment(member.homeDepartmentId)
                         : "Unassigned"}
                     </td>
                     <td className="px-5 py-4">
@@ -214,9 +444,9 @@ export default function TenantOwnerPage() {
                       <button
                         type="button"
                         className="text-sm font-semibold text-[#1d4ed8]"
-                        onClick={() => router.push(tenantRoutes.users(activeMembership.tenantId))}
+                        onClick={() => router.push(tenantRoutes.userDetail(activeMembership.tenantId, member.userId))}
                       >
-                        Manage
+                        Open Profile
                       </button>
                     </td>
                   </tr>
