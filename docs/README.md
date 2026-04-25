@@ -1,23 +1,24 @@
-# TimesheetPlus Documentation Index
+﻿# TimesheetPlus Documentation Index
 
-## Core Docs
-- `docs/project-overview-status.md`
-  - What the project is, current implementation state, done vs pending.
-- `docs/folder-structure.md`
-  - Detailed repository and backend folder-by-folder structure guide.
-- `docs/development-plan.md`
-  - Execution tracking checklist (backend + frontend phase status).
-- `docs/frontend-implementation-plan.md`
-  - Detailed frontend implementation blueprint for next session.
-- `docs/firestore-collections.md`
-  - Firestore data dictionary with collection-level explanations.
-- `docs/design.md`
-  - Design-system baseline (colors, typography, spacing, visual direction).
+## Start Here
+1. `docs/project-overview-status.md` - current product and implementation status.
+2. `apps/api/README.md` - API setup, behavior, and endpoint list.
+3. `apps/web/README.md` - web setup, route surface, and UI behavior.
 
-## Recommended Reading Order
-1. `project-overview-status.md`
-2. `folder-structure.md`
-3. `development-plan.md`
-4. `frontend-implementation-plan.md`
-5. `firestore-collections.md`
-6. `design.md`
+## Project Docs (`docs/`)
+- `project-overview-status.md`
+  - Scope, implemented capabilities, and known gaps.
+- `development-plan.md`
+  - Backend/frontend milestone tracking and active backlog.
+- `folder-structure.md`
+  - Repository organization and placement rules for new code.
+- `firestore-collections.md`
+  - Firestore data dictionary and collection-level notes.
+- `frontend-implementation-plan.md`
+  - Frontend architecture and implementation reference.
+- `design.md`
+  - Design tokens and UI baseline.
+
+## Notes
+- This repository has both app-specific and project-level docs.
+- Keep `apps/api/README.md`, `apps/web/README.md`, and `docs/project-overview-status.md` in sync when behavior changes.

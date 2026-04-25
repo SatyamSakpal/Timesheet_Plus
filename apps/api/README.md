@@ -1,4 +1,6 @@
-# TimesheetPlus API
+﻿# TimesheetPlus API
+
+Backend service for multi-tenant activity logging, review, and administration.
 
 ## Setup
 1. Copy `.env.example` to `.env`.
@@ -10,50 +12,88 @@
 ## Environment
 - `PORT`: API port (default `4000`)
 - `DATA_PROVIDER`: `memory` or `firestore`
-- `MOCK_AUTH_ENABLED`: `true` for local/testing with headers
-- `FIREBASE_PROJECT_ID`: required when using Firestore/Firebase Auth in cloud setup
+- `MOCK_AUTH_ENABLED`: `true` for local/testing with request headers
+- `FIREBASE_PROJECT_ID`: required when using Firebase Auth/Firestore
 
 Notes:
-- The API loads env values from:
-  - current working directory `.env`
-  - `apps/api/.env`
-- Existing shell environment variables take precedence over file values.
+- Env values are loaded from shell env first, then local `.env` files.
+- API supports in-memory persistence for local tests and Firestore for persistent environments.
 
 ## Local Mock Auth
-When `MOCK_AUTH_ENABLED=true`, pass these headers:
+When `MOCK_AUTH_ENABLED=true`, pass:
 - `x-user-id`
 - `x-user-email`
 - `x-user-name`
 
 ## Scripts
-- `npm.cmd run dev` - run API in watch mode
-- `npm.cmd run build` - compile TypeScript to `dist`
-- `npm.cmd run test` - run integration tests
+- `npm.cmd run dev` - watch mode
+- `npm.cmd run build` - compile TS to `dist`
+- `npm.cmd run test` - integration tests
 
-## Roles and Invites
-- Every new tenant is seeded with system roles:
-  - `Owner`
-  - `Head of Department`
-  - `Staff`
-- Master permission catalog is available at:
-  - `GET /v1/catalog/permissions`
-- Invite-first lifecycle:
-  - `POST /v1/tenants/:tenantId/invites` creates a pending invite record (no membership is created yet).
-  - `GET /v1/tenants/:tenantId/invites` returns invite lifecycle rows (`pending`, `accepted`, `revoked`).
-  - `POST /v1/tenants/:tenantId/invites/:inviteId/accept` creates/activates membership for the authenticated invitee.
-  - `GET /v1/me` includes `pendingInvites` matched by logged-in user email.
-- Master field catalog for task form builders is available at:
-  - `GET /v1/catalog/fields`
-- Backward-compatible direct member add still exists:
-  - `POST /v1/tenants/:tenantId/members`
+## Core Behavior
+- Tenant creation seeds system roles: `Owner`, `Head of Department`, `Staff`.
+- Invite-first membership lifecycle:
+  - Invite creation does not create tenant membership.
+  - Membership is created/activated only on invite acceptance.
+  - Invitee can reject invite before acceptance.
+- Tenant member management includes removal with safeguards:
+  - owner cannot be removed
+  - self-removal is blocked
+  - department member/HOD mappings are cleaned up on removal
+- Tenant soft delete (`DELETE /tenants/:tenantId`) excludes deleted tenant from `/v1/me` memberships.
+- Activity creation enforces time-range overlap validation per user/date.
 
-## Tenant Lifecycle
-- Create tenant:
-  - `POST /v1/tenants`
-- Soft-delete tenant (owner only):
-  - `DELETE /v1/tenants/:tenantId`
+## API Surface
 
-Soft-delete behavior:
-- Tenant document is marked with `deletedAt` and `deletedBy`.
-- Deleted tenants are excluded from `GET /v1/me` memberships.
-- Tenant-scoped endpoints treat deleted tenants as `404 Not Found`.
+### Session and catalogs
+- `GET /v1/me`
+- `GET /v1/catalog/permissions`
+- `GET /v1/catalog/fields`
+
+### Tenant lifecycle
+- `POST /v1/tenants`
+- `DELETE /v1/tenants/:tenantId`
+
+### Invites
+- `POST /v1/tenants/:tenantId/invites`
+- `GET /v1/tenants/:tenantId/invites`
+- `POST /v1/tenants/:tenantId/invites/:inviteId/accept`
+- `POST /v1/tenants/:tenantId/invites/:inviteId/reject`
+
+### Roles and members
+- `POST /v1/tenants/:tenantId/roles`
+- `GET /v1/tenants/:tenantId/roles`
+- `DELETE /v1/tenants/:tenantId/roles/:roleId`
+- `GET /v1/tenants/:tenantId/members`
+- `POST /v1/tenants/:tenantId/members`
+- `DELETE /v1/tenants/:tenantId/members/:memberUserId`
+- `POST /v1/tenants/:tenantId/members/:memberUserId/roles`
+- `GET /v1/tenants/:tenantId/users`
+- `GET /v1/tenants/:tenantId/users/:userId`
+- `PATCH /v1/tenants/:tenantId/users/:userId/home-department`
+
+### Departments
+- `POST /v1/tenants/:tenantId/departments`
+- `GET /v1/tenants/:tenantId/departments`
+- `POST /v1/tenants/:tenantId/departments/:departmentId/members`
+- `POST /v1/tenants/:tenantId/departments/:departmentId/hods`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/members`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/hods`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/contributors`
+
+### Tasks
+- `POST /v1/tenants/:tenantId/task-templates`
+- `GET /v1/tenants/:tenantId/task-templates`
+- `PATCH /v1/tenants/:tenantId/task-templates/:taskTemplateId`
+- `POST /v1/tenants/:tenantId/departments/:departmentId/tasks/:taskTemplateId`
+- `DELETE /v1/tenants/:tenantId/departments/:departmentId/tasks/:taskTemplateId`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/tasks`
+
+### Activities
+- `POST /v1/tenants/:tenantId/activities`
+- `GET /v1/tenants/:tenantId/activities/my`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/activities`
+- `POST /v1/tenants/:tenantId/activities/:activityId/approve`
+- `POST /v1/tenants/:tenantId/activities/:activityId/reject`
+- `POST /v1/tenants/:tenantId/activities/:activityId/resubmit`
+- `DELETE /v1/tenants/:tenantId/activities/:activityId`

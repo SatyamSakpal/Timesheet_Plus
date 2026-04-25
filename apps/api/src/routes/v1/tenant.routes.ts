@@ -60,6 +60,21 @@ router.post(
   })
 );
 
+router.post(
+  "/tenants/:tenantId/invites/:inviteId/reject",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    if (!req.user) {
+      unauthorized();
+    }
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const inviteId = param(req, "inviteId");
+    const invite = await service.rejectInvite(tenantId, inviteId, req.user);
+    res.json({ data: invite });
+  })
+);
+
 const scopedTenantRouter = Router({ mergeParams: true });
 scopedTenantRouter.use(authenticate, attachTenantContext);
 

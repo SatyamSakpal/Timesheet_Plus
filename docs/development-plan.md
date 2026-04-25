@@ -1,97 +1,86 @@
-# TimesheetPlus Development Tracking
+﻿# TimesheetPlus Development Tracking
 
-## Backend Status (Current)
+Snapshot date: 2026-04-25
+
+## Backend Milestones
 - [x] B1 Foundation
-- [x] B2 Tenant + Department Management
+- [x] B2 Tenant and Department Management
 - [x] B3 Task Template System (Dynamic Forms)
 - [x] B4 Activity Submission Flow
-- [x] B5 Department Approval Flow
+- [x] B5 Department Review and Approval Flow
 - [x] B6 Department-Centric Visibility APIs
-- [x] B7 Security + RBAC
-- [ ] B8 Stabilization (OpenAPI docs, deployment pipeline hardening, broader test coverage, index guidance)
+- [x] B7 Security and RBAC
+- [ ] B8 Stabilization (OpenAPI docs, deployment hardening, broader edge-case coverage)
 
-## Implemented Backend Capabilities
-- Express + TypeScript API scaffolded under `apps/api`.
-- Firebase Admin initialization with `DATA_PROVIDER` support (`memory` or `firestore`).
-- Auth middleware supports Firebase token verification and mock auth for local/emulator tests.
-- Multi-tenant hierarchy implemented:
-  - `Tenant -> Departments -> Task Templates -> Department Task Assignments -> Activity Entries`
-- User membership model:
-  - one `homeDepartmentId` in tenant membership
-  - optional explicit `department_memberships`
-  - users can submit entries in departments other than home department
-- HOD model:
-  - `department_hods` mapping supports one HOD across multiple departments
-  - HOD approval restricted to activity entries for headed departments
-- Dynamic task forms:
-  - field schema types: `text`, `number`, `date`, `select`, `checkbox`, `textarea`
-  - payload validation on submit/resubmit
-- Department visibility rules:
-  - members endpoint returns users assigned to/home in department
-  - contributors endpoint returns users who worked in department but are not members
-- RBAC:
-  - tenant roles with permission keys
-  - system default roles auto-seeded on tenant creation (`Owner`, `Head of Department`, `Staff`)
-  - master permission catalog collection (`permission_catalog`) for configurable permission definitions
-  - member role assignment
-  - invite-time role assignment
-  - invite-first flow (membership created only on accept)
-  - route-level permission checks plus department-specific HOD checks
-- Form builder metadata:
-  - master field catalog collection (`field_catalog`) for supported task field types
-- Audit logs:
-  - written for tenant/department/role/task/activity lifecycle actions
-- Tenant lifecycle:
-  - owner-only soft-delete endpoint (`DELETE /v1/tenants/:tenantId`)
-  - deleted tenants are excluded from `/v1/me` memberships
-  - `/v1/me` includes `pendingInvites` for logged-in email
+## Frontend Milestones
+- [x] F1 Foundation (Next.js app, auth bootstrap, typed API client)
+- [x] F2 Tenant Context and Navigation
+- [x] F3 Staff Activity Logging
+- [x] F4 HOD Review Experience
+- [x] F5 Tenant Admin Experience
+- [ ] F6 Quality and Release Readiness (E2E, accessibility, release runbooks)
 
-## Frontend Status (Detailed Plan Ready)
-- [x] F1 Foundation (Next.js app scaffold, auth bootstrap, API/query client)
-- [x] F2 Tenant Context + Navigation (membership-aware shell)
-- [x] F3 Staff Activity Logging (dynamic forms, draft/submit/resubmit)
-- [x] F4 HOD Review Experience (pending queue, approve/reject, contributor visibility)
-- [x] F5 Tenant Admin Experience (roles, invites, departments, task templates)
-- [ ] F6 Quality and Release Readiness (tests, accessibility, deployment docs)
+## Implemented Highlights
+- Invite-first onboarding with dashboard accept/reject actions.
+- Tenant member removal with permission checks and safety guards.
+- Role deletion guard when role is currently assigned.
+- User directory and user-detail scope for owner/HOD.
+- Task template update and department unassignment flows.
+- Activity overlap validation and pending-entry deletion.
 
 ## Current API Surface
+
+### Session and catalogs
 - `GET /v1/me`
-- `POST /v1/tenants`
-- `DELETE /v1/tenants/:tenantId`
 - `GET /v1/catalog/permissions`
 - `GET /v1/catalog/fields`
-- `POST /v1/tenants/:tenantId/roles`
-- `GET /v1/tenants/:tenantId/roles`
+
+### Tenants, invites, roles, members, users
+- `POST /v1/tenants`
+- `DELETE /v1/tenants/:tenantId`
 - `POST /v1/tenants/:tenantId/invites`
 - `GET /v1/tenants/:tenantId/invites`
 - `POST /v1/tenants/:tenantId/invites/:inviteId/accept`
-- `POST /v1/tenants/:tenantId/members`
+- `POST /v1/tenants/:tenantId/invites/:inviteId/reject`
+- `POST /v1/tenants/:tenantId/roles`
+- `GET /v1/tenants/:tenantId/roles`
+- `DELETE /v1/tenants/:tenantId/roles/:roleId`
 - `GET /v1/tenants/:tenantId/members`
+- `POST /v1/tenants/:tenantId/members`
+- `DELETE /v1/tenants/:tenantId/members/:memberUserId`
 - `POST /v1/tenants/:tenantId/members/:memberUserId/roles`
 - `GET /v1/tenants/:tenantId/users`
+- `GET /v1/tenants/:tenantId/users/:userId`
+- `PATCH /v1/tenants/:tenantId/users/:userId/home-department`
+
+### Departments
 - `POST /v1/tenants/:tenantId/departments`
 - `GET /v1/tenants/:tenantId/departments`
 - `POST /v1/tenants/:tenantId/departments/:departmentId/members`
 - `POST /v1/tenants/:tenantId/departments/:departmentId/hods`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/members`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/hods`
+- `GET /v1/tenants/:tenantId/departments/:departmentId/contributors`
+
+### Tasks
 - `POST /v1/tenants/:tenantId/task-templates`
+- `GET /v1/tenants/:tenantId/task-templates`
+- `PATCH /v1/tenants/:tenantId/task-templates/:taskTemplateId`
 - `POST /v1/tenants/:tenantId/departments/:departmentId/tasks/:taskTemplateId`
+- `DELETE /v1/tenants/:tenantId/departments/:departmentId/tasks/:taskTemplateId`
 - `GET /v1/tenants/:tenantId/departments/:departmentId/tasks`
+
+### Activities
 - `POST /v1/tenants/:tenantId/activities`
+- `GET /v1/tenants/:tenantId/activities/my`
 - `GET /v1/tenants/:tenantId/departments/:departmentId/activities`
 - `POST /v1/tenants/:tenantId/activities/:activityId/approve`
 - `POST /v1/tenants/:tenantId/activities/:activityId/reject`
 - `POST /v1/tenants/:tenantId/activities/:activityId/resubmit`
-- `GET /v1/tenants/:tenantId/departments/:departmentId/members`
-- `GET /v1/tenants/:tenantId/departments/:departmentId/contributors`
+- `DELETE /v1/tenants/:tenantId/activities/:activityId`
 
-## Next Backend Tasks
-1. Add OpenAPI generation for all v1 endpoints and publish route docs.
-2. Add deployment manifests and CI pipeline for Railway/Render.
-3. Expand automated tests for rejection/resubmission lifecycle and tenant-isolation edge cases.
-4. Add Firestore index documentation for production query patterns.
-
-## Frontend Plan Reference
-- Detailed implementation blueprint:
-  - `docs/frontend-implementation-plan.md`
-- Project state and scope summary:
-  - `docs/project-overview-status.md`
+## Active Backlog
+1. Generate and publish OpenAPI docs for v1.
+2. Add production deployment and operations runbooks.
+3. Expand tenant isolation and authorization edge-case tests.
+4. Add richer frontend E2E and accessibility checks.

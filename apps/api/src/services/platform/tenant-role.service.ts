@@ -531,6 +531,37 @@ export class TenantRoleService extends PlatformCoreService {
     return activatedMembership;
   }
 
+  async rejectInvite(
+    tenantId: string,
+    inviteId: string,
+    actor: AuthenticatedUser
+  ): Promise<TenantInviteEntity> {
+    const invite = await this.store.getById<TenantInviteEntity>(COLLECTIONS.tenantInvites, inviteId);
+    if (!invite || invite.tenantId !== tenantId) {
+      notFound("Invite not found");
+    }
+    if (invite.status !== "pending") {
+      badRequest("Invite is no longer pending");
+    }
+
+    const actorEmail = actor.email.toLowerCase();
+    const inviteEmail = invite.email.toLowerCase();
+    const emailMatches = inviteEmail === actorEmail;
+    const userIdMatches = invite.userId ? invite.userId === actor.uid : false;
+    if (!emailMatches && !userIdMatches) {
+      forbidden("Invite does not belong to this user");
+    }
+
+    const rejectedInvite = await this.store.update<TenantInviteEntity>(COLLECTIONS.tenantInvites, invite.id, {
+      status: "revoked",
+      acceptedAt: null,
+      updatedAt: nowIso(),
+      userId: actor.uid
+    });
+    await this.createAuditLog(tenantId, actor.uid, "invite.reject", "invite", invite.id, {});
+    return rejectedInvite;
+  }
+
   async listPendingInvitesForUser(
     user: AuthenticatedUser
   ): Promise<Array<{

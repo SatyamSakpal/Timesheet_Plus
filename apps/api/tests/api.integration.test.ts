@@ -835,6 +835,56 @@ describe("TimesheetPlus API", () => {
     expect(meAfterAccept.body.data.pendingInvites).toHaveLength(0);
   });
 
+  it("allows invitee to reject pending invite from tenant dashboard flow", async () => {
+    const app = createApp();
+    const invitee = {
+      id: "invitee-reject-uid",
+      email: "invitee-reject@tenant.com",
+      name: "Invitee Reject"
+    };
+
+    const tenantRes = await withAuth(
+      request(app).post("/v1/tenants").send({ name: "Tenant Reject Invite" }),
+      owner
+    );
+    const tenantId = tenantRes.body.data.id as string;
+
+    const inviteRes = await withAuth(
+      request(app).post(`/v1/tenants/${tenantId}/invites`).send({
+        email: invitee.email
+      }),
+      owner
+    );
+    expect(inviteRes.status).toBe(201);
+    const inviteId = inviteRes.body.data.invite.id as string;
+
+    const meBeforeReject = await withAuth(request(app).get("/v1/me"), invitee);
+    expect(meBeforeReject.status).toBe(200);
+    expect(meBeforeReject.body.data.pendingInvites).toHaveLength(1);
+
+    const rejectRes = await withAuth(
+      request(app).post(`/v1/tenants/${tenantId}/invites/${inviteId}/reject`).send({}),
+      invitee
+    );
+    expect(rejectRes.status).toBe(200);
+    expect(rejectRes.body.data.status).toBe("revoked");
+
+    const meAfterReject = await withAuth(request(app).get("/v1/me"), invitee);
+    expect(meAfterReject.status).toBe(200);
+    expect(meAfterReject.body.data.pendingInvites).toHaveLength(0);
+    expect(meAfterReject.body.data.memberships).toHaveLength(0);
+
+    const ownerInvites = await withAuth(
+      request(app).get(`/v1/tenants/${tenantId}/invites`),
+      owner
+    );
+    expect(ownerInvites.status).toBe(200);
+    const updatedInvite = (ownerInvites.body.data as Array<{ id: string; status: string }>).find(
+      (entry) => entry.id === inviteId
+    );
+    expect(updatedInvite?.status).toBe("revoked");
+  });
+
   it("preserves an existing profile name even when a future auth login sends a different provider name", async () => {
     const app = createApp();
     const original = {

@@ -1,9 +1,8 @@
-# TimesheetPlus Web (`apps/web`)
+﻿# TimesheetPlus Web (`apps/web`)
 
-Next.js + TypeScript frontend for TimesheetPlus v1 backend APIs.
+Next.js + TypeScript frontend for the TimesheetPlus backend.
 
 ## Local Run
-
 1. Install dependencies:
    ```bash
    npm install
@@ -18,34 +17,54 @@ Next.js + TypeScript frontend for TimesheetPlus v1 backend APIs.
    ```
 
 ## Environment
+- `NEXT_PUBLIC_API_BASE_URL`: backend API base URL (example: `http://localhost:4000`).
+- `NEXT_PUBLIC_MOCK_AUTH`: `true` to use local mock auth (`x-user-*` headers).
+- Firebase env vars are required only when mock auth is disabled.
 
-- `NEXT_PUBLIC_API_BASE_URL`: backend API base URL (for example `http://localhost:4000`).
-- `NEXT_PUBLIC_MOCK_AUTH`: set to `true` to use local mock auth and pass `x-user-*` headers.
-- Firebase vars are required only when mock auth is disabled.
+## Route Surface
 
-## Implemented Route Surface
-
+### Public
+- `/`
 - `/login`
+
+### Authenticated root
 - `/app`
 - `/app/tenants`
 - `/app/tenants/[tenantId]`
+
+### Tenant scoped
 - `/app/tenants/[tenantId]/owner`
 - `/app/tenants/[tenantId]/users`
+- `/app/tenants/[tenantId]/users/[userId]`
+- `/app/tenants/[tenantId]/activities`
+- `/app/tenants/[tenantId]/activities/new`
+- `/app/tenants/[tenantId]/activities/[taskTemplateId]`
+- `/app/tenants/[tenantId]/activity`
 - `/app/tenants/[tenantId]/activity/new`
 - `/app/tenants/[tenantId]/activity/my`
+- `/app/tenants/[tenantId]/hod`
 - `/app/tenants/[tenantId]/hod/review`
 - `/app/tenants/[tenantId]/hod/departments/[departmentId]/members`
+- `/app/tenants/[tenantId]/admin`
 - `/app/tenants/[tenantId]/admin/roles`
 - `/app/tenants/[tenantId]/admin/invites`
 - `/app/tenants/[tenantId]/admin/departments`
+- `/app/tenants/[tenantId]/admin/departments/[departmentId]`
 - `/app/tenants/[tenantId]/admin/tasks`
 
-## Notes
+## Current UX and Permission Behavior
+- Sidebar tenant links render conditionally based on effective tenant permissions.
+- Tenant title is shown in the top header (left side) for tenant-scoped pages.
+- `Enter Portal` resolves destination by role/permissions:
+  - owner -> owner dashboard
+  - HOD/report-capable member -> owner dashboard route
+  - other members -> My Activity page
+- Pending invites are shown on `/app` and support both:
+  - `Accept`
+  - `Reject`
+- Users page supports tenant-member removal (permission-gated) with custom confirmation modal.
 
-- Frontend integrates only through backend REST endpoints.
-- Tenant routes are tenant-scoped in URL path (`/app/tenants/[tenantId]/...`).
-- Dashboard sidebar exposes tenant-specific navigation; module visibility can be permission-gated.
-- Owner cards on `/app` support tenant deletion through a 3-dot menu, backed by `DELETE /v1/tenants/:tenantId` soft-delete behavior.
-- Joined Organizations on `/app` also renders pending invite cards from `/v1/me.pendingInvites`, and accepts invites from the dashboard.
-- Admin invites page shows invite lifecycle (`pending`/`accepted`/`revoked`).
-- App shell state uses persisted local storage (`timesheetplus-web-state`) for active tenant and known department hints.
+## Notes
+- Frontend integrates through backend REST APIs only.
+- React Query handles server-state caching and invalidation.
+- Active tenant and lightweight UI state are persisted in local storage.

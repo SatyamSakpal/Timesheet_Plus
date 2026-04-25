@@ -289,11 +289,15 @@ function JoinedCompactCard({
 function PendingInviteCard({
   invite,
   onAccept,
-  isAccepting
+  onReject,
+  isAccepting,
+  isRejecting
 }: {
   invite: PendingInvite;
   onAccept: (invite: PendingInvite) => void;
+  onReject: (invite: PendingInvite) => void;
   isAccepting: boolean;
+  isRejecting: boolean;
 }) {
   return (
     <article className="flex min-h-[220px] flex-col rounded-2xl border border-[#dbeafe] bg-white p-5 shadow-[0_12px_32px_rgba(25,28,29,0.06)]">
@@ -314,14 +318,24 @@ function PendingInviteCard({
       <p className="mt-1 text-xs text-[#64748b]">
         Invited by {invite.invitedByName ?? "Team Admin"}
       </p>
-      <button
-        type="button"
-        className="mt-auto w-full rounded-xl bg-gradient-to-br from-[#0040a3] to-[#0d56d0] py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-        onClick={() => onAccept(invite)}
-        disabled={isAccepting}
-      >
-        {isAccepting ? "Accepting..." : "Accept Invite"}
-      </button>
+      <div className="mt-auto grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          className="w-full rounded-xl border border-[#fecaca] bg-[#fff1f2] py-2.5 text-sm font-semibold text-[#b42318] transition hover:bg-[#ffe4e8] disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onReject(invite)}
+          disabled={isRejecting || isAccepting}
+        >
+          {isRejecting ? "Rejecting..." : "Reject"}
+        </button>
+        <button
+          type="button"
+          className="w-full rounded-xl bg-gradient-to-br from-[#0040a3] to-[#0d56d0] py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onAccept(invite)}
+          disabled={isAccepting || isRejecting}
+        >
+          {isAccepting ? "Accepting..." : "Accept"}
+        </button>
+      </div>
     </article>
   );
 }
@@ -343,6 +357,7 @@ export default function AppHomePage() {
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [enteringTenantId, setEnteringTenantId] = useState<string | null>(null);
   const [acceptingInviteId, setAcceptingInviteId] = useState<string | null>(null);
+  const [rejectingInviteId, setRejectingInviteId] = useState<string | null>(null);
   const scope = searchParams.get("scope") ?? "";
   const pendingInvites = useMemo(() => meQuery.data?.pendingInvites ?? [], [meQuery.data?.pendingInvites]);
 
@@ -411,6 +426,24 @@ export default function AppHomePage() {
     },
     onSettled: () => {
       setAcceptingInviteId(null);
+    }
+  });
+
+  const rejectInviteMutation = useMutation({
+    mutationFn: (input: { tenantId: string; inviteId: string }) =>
+      apiClient.post(`/v1/tenants/${input.tenantId}/invites/${input.inviteId}/reject`),
+    onMutate: (input) => {
+      setRejectingInviteId(input.inviteId);
+    },
+    onSuccess: async () => {
+      setPortalError(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.me });
+    },
+    onError: (nextError) => {
+      setPortalError(nextError instanceof Error ? nextError.message : "Failed to reject invite.");
+    },
+    onSettled: () => {
+      setRejectingInviteId(null);
     }
   });
 
@@ -484,6 +517,14 @@ export default function AppHomePage() {
     acceptInviteMutation.mutate({ tenantId: invite.tenantId, inviteId: invite.id });
   }
 
+  function onRejectInvite(invite: PendingInvite) {
+    if (rejectInviteMutation.isPending) {
+      return;
+    }
+    setPortalError(null);
+    rejectInviteMutation.mutate({ tenantId: invite.tenantId, inviteId: invite.id });
+  }
+
   const dashboardOwned = ownedTenants;
   const dashboardJoinedMain = joinedTenants[0];
   const dashboardJoinedSecondary = joinedTenants.slice(1, 3);
@@ -551,7 +592,9 @@ export default function AppHomePage() {
                     key={invite.id}
                     invite={invite}
                     onAccept={onAcceptInvite}
+                    onReject={onRejectInvite}
                     isAccepting={acceptingInviteId === invite.id}
+                    isRejecting={rejectingInviteId === invite.id}
                   />
                 ))}
               </div>
