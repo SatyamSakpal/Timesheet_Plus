@@ -1,6 +1,7 @@
 import { badRequest } from "../../errors/app-error";
 import {
   COLLECTIONS,
+  type DepartmentEntity,
   type DepartmentTaskEntity,
   type TaskTemplateEntity
 } from "../../types/domain";
@@ -28,6 +29,7 @@ export class TaskService extends DepartmentService {
   ): Promise<TaskTemplateEntity> {
     await this.getTenantOrThrow(tenantId);
     await this.assertFieldTypesConfigured(input.fields.map((field) => field.type));
+    await this.assertUniqueTaskTemplateName(tenantId, input.name);
     const timestamp = nowIso();
     const template: TaskTemplateEntity = {
       id: newId(),
@@ -61,6 +63,7 @@ export class TaskService extends DepartmentService {
   ): Promise<TaskTemplateEntity> {
     const template = await this.getTaskTemplateOrThrow(tenantId, taskTemplateId);
     await this.assertFieldTypesConfigured(input.fields.map((field) => field.type));
+    await this.assertUniqueTaskTemplateName(tenantId, input.name, template.id);
 
     const timestamp = nowIso();
     const next = await this.store.update<TaskTemplateEntity>(COLLECTIONS.taskTemplates, template.id, {
@@ -85,6 +88,39 @@ export class TaskService extends DepartmentService {
     );
 
     return next;
+  }
+
+  async deleteTaskTemplate(
+    tenantId: string,
+    taskTemplateId: string,
+    actorUserId: string
+  ): Promise<TaskTemplateEntity> {
+    const template = await this.getTaskTemplateOrThrow(tenantId, taskTemplateId);
+    const assignments = await this.store.query<DepartmentTaskEntity>(COLLECTIONS.departmentTasks, [
+      { field: "tenantId", op: "==", value: tenantId },
+      { field: "taskTemplateId", op: "==", value: taskTemplateId }
+    ]);
+    if (assignments.length > 0) {
+      const departments = await this.store.query<DepartmentEntity>(COLLECTIONS.departments, [
+        { field: "tenantId", op: "==", value: tenantId }
+      ]);
+      const departmentNameById = new Map(departments.map((department) => [department.id, department.name]));
+      const assignedDepartmentIds = [...new Set(assignments.map((assignment) => assignment.departmentId))];
+      const assignedDepartments = assignedDepartmentIds.map((departmentId) => ({
+        id: departmentId,
+        name: departmentNameById.get(departmentId) ?? departmentId
+      }));
+      badRequest(
+        `Cannot delete activity "${template.name}" because it is assigned to one or more departments.`,
+        { assignedDepartments }
+      );
+    }
+
+    await this.store.delete(COLLECTIONS.taskTemplates, template.id);
+    await this.createAuditLog(tenantId, actorUserId, "task_template.delete", "task_template", template.id, {
+      name: template.name
+    });
+    return template;
   }
 
   async assignTaskToDepartment(
@@ -197,6 +233,30 @@ export class TaskService extends DepartmentService {
     );
     if (assignment.length === 0) {
       badRequest("Task template is not assigned to this department");
+    }
+  }
+
+  private normalizeTaskTemplateName(name: string): string {
+    return name.trim().replace(/\s+/g, " ").toLowerCase();
+  }
+
+  private async assertUniqueTaskTemplateName(
+    tenantId: string,
+    name: string,
+    excludeTemplateId?: string
+  ): Promise<void> {
+    const normalizedName = this.normalizeTaskTemplateName(name);
+    const templates = await this.store.query<TaskTemplateEntity>(COLLECTIONS.taskTemplates, [
+      { field: "tenantId", op: "==", value: tenantId }
+    ]);
+    const duplicate = templates.find((template) => {
+      if (excludeTemplateId && template.id === excludeTemplateId) {
+        return false;
+      }
+      return this.normalizeTaskTemplateName(template.name) === normalizedName;
+    });
+    if (duplicate) {
+      badRequest("Activity name already exists in this tenant");
     }
   }
 }

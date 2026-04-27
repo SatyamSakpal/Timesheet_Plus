@@ -25,6 +25,22 @@ This file documents project-owned Firestore collections used by `apps/api`.
   - `checkbox`
 - Fields: `supportsOptions`, `supportsNumericRange`, `order`, timestamps.
 
+## `preset_departments_catalog`
+- Purpose: master preset departments used to bootstrap new tenants.
+- Document ID: preset key (example `bca_department`).
+- Fields: `key`, `name`, optional `description`, `order`, `isActive`, timestamps.
+- Notes:
+  - Values are domain presets for education organizations.
+  - Tenant-created departments are regular `departments` records and are not system-locked.
+
+## `preset_task_templates_catalog`
+- Purpose: master preset activity templates with field schema and default department mapping.
+- Document ID: preset key (example `lecture_delivery`).
+- Fields: `key`, `name`, optional `description`, `order`, `isActive`, `assignedDepartmentKeys`, `fields`, timestamps.
+- Notes:
+  - Used during tenant bootstrap to precreate activity templates and department assignments.
+  - Includes support for default `other_activity` behavior (description-only schema).
+
 ## `tenants`
 - Purpose: tenant boundary and ownership.
 - Document ID: UUID.
@@ -67,7 +83,9 @@ This file documents project-owned Firestore collections used by `apps/api`.
 ## `task_templates`
 - Purpose: reusable task definitions with dynamic fields.
 - Document ID: UUID.
-- Fields: `tenantId`, `name`, optional `description`, `version`, `fields`, `createdBy`, `isActive`, timestamps.
+- Fields: `tenantId`, optional `key` (for seeded templates like `other_activity`), `name`, optional `description`, `version`, `fields`, `createdBy`, `isActive`, timestamps.
+- Notes:
+  - Tenant-scoped activity-template names are unique (case-insensitive uniqueness enforced in service layer).
 
 ## `department_tasks`
 - Purpose: department-to-task assignment mapping.

@@ -2,7 +2,7 @@
 
 import type { ActivityEntry } from "@/lib/types";
 import { formatDate } from "@/lib/format";
-import { Button, Card } from "@/components/ui/primitives";
+import { Badge, Button, Card } from "@/components/ui/primitives";
 
 function parseTimeToMinutes(value: string): number | null {
   if (!value || !value.includes(":")) {
@@ -75,21 +75,60 @@ function formatPayloadValue(value: unknown): string {
   return String(value);
 }
 
+function toStatusTone(status: ActivityEntry["status"]): "neutral" | "success" | "warning" | "danger" | "info" {
+  if (status === "approved") {
+    return "success";
+  }
+  if (status === "rejected") {
+    return "danger";
+  }
+  if (status === "draft") {
+    return "neutral";
+  }
+  if (status === "resubmitted") {
+    return "info";
+  }
+  return "warning";
+}
+
+function toTitleCase(value: string): string {
+  if (!value) {
+    return value;
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function renderTimestamp(value: string | null): string {
+  if (!value) {
+    return "Not available";
+  }
+  return formatDate(value);
+}
+
 export function ActivityDetailDrawer({
   activity,
   onClose,
-  actions
+  actions,
+  ownerName,
+  ownerEmail,
+  departmentName,
+  variant = "card",
+  showCloseButton = true
 }: {
   activity: ActivityEntry | null;
   onClose: () => void;
   actions?: React.ReactNode;
+  ownerName?: string;
+  ownerEmail?: string;
+  departmentName?: string;
+  variant?: "card" | "plain";
+  showCloseButton?: boolean;
 }) {
   if (!activity) {
-    return (
-      <Card className="h-full">
-        <p className="text-sm text-brand-moss">Select an activity to inspect details.</p>
-      </Card>
-    );
+    if (variant === "plain") {
+      return <p className="text-sm text-brand-moss">Select an activity to inspect details.</p>;
+    }
+    return <Card className="h-full"><p className="text-sm text-brand-moss">Select an activity to inspect details.</p></Card>;
   }
 
   const seenKeys = new Set<string>();
@@ -115,52 +154,84 @@ export function ActivityDetailDrawer({
     });
   }
 
-  return (
-    <Card className="h-full">
-      <div className="mb-3 flex items-start justify-between">
-        <h3 className="text-lg font-semibold text-brand-slate">Activity Details</h3>
-        <Button variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-      <dl className="grid gap-2 text-sm md:grid-cols-2">
+  const content = (
+    <>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-brand-mist/70 pb-4">
         <div>
-          <dt className="text-xs uppercase tracking-wide text-brand-moss">Task</dt>
-          <dd>{activity.taskTemplateName}</dd>
+          <h3 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+            Activity Details
+          </h3>
+          <p className="mt-1 text-sm text-brand-moss">{activity.taskTemplateName}</p>
         </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-brand-moss">Status</dt>
-          <dd>{activity.status}</dd>
+        <div className="flex items-center gap-2">
+          <Badge value={toTitleCase(activity.status)} tone={toStatusTone(activity.status)} />
         </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-brand-moss">Created</dt>
-          <dd>{formatDate(activity.createdAt)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-brand-moss">Date</dt>
-          <dd>{activity.activityDate}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-brand-moss">Time</dt>
-          <dd>
-            {activity.startTime} - {activity.endTime} ({formatDuration(activity.startTime, activity.endTime)})
-          </dd>
-        </div>
-        {activity.rejectionReason ? (
-          <div className="md:col-span-2">
-            <dt className="text-xs uppercase tracking-wide text-brand-moss">Rejection Reason</dt>
-            <dd>{activity.rejectionReason}</dd>
-          </div>
+        {showCloseButton ? (
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
         ) : null}
-      </dl>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Owner</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">{ownerName ?? activity.userId}</p>
+          <p className="text-xs text-brand-moss">{ownerEmail ?? "Email unavailable"}</p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Department</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">
+            {departmentName ?? "Unknown department"}
+          </p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Activity Date</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">{activity.activityDate}</p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Time</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">
+            {activity.startTime} - {activity.endTime}
+          </p>
+          <p className="text-xs text-brand-moss">{formatDuration(activity.startTime, activity.endTime)}</p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Created</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">{renderTimestamp(activity.createdAt)}</p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Submitted</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">{renderTimestamp(activity.submittedAt)}</p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Reviewed</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">{renderTimestamp(activity.reviewedAt)}</p>
+        </div>
+        <div className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+          <p className="text-xs uppercase tracking-wide text-brand-moss">Updated</p>
+          <p className="mt-1 text-sm font-semibold text-brand-slate">{renderTimestamp(activity.updatedAt)}</p>
+        </div>
+      </div>
+
+      {activity.rejectionReason ? (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-xs uppercase tracking-wide text-red-700">Rejection Reason</p>
+          <p className="mt-1 text-sm text-red-800">{activity.rejectionReason}</p>
+        </div>
+      ) : null}
+
       <div className="mt-4">
         <h4 className="text-sm font-semibold uppercase tracking-wide text-brand-moss">Submitted Details</h4>
         {fieldRows.length ? (
-          <dl className="mt-2 grid gap-2 text-sm">
+          <dl className="mt-2 grid gap-2 sm:grid-cols-2">
             {fieldRows.map((field) => (
-              <div key={field.key} className="rounded-md border border-brand-mist/70 bg-[#f8fafc] px-3 py-2">
+              <div
+                key={field.key}
+                className="rounded-lg border border-brand-mist/70 bg-white px-3 py-2"
+              >
                 <dt className="text-xs uppercase tracking-wide text-brand-moss">{field.label}</dt>
-                <dd className="mt-1 text-brand-slate">{field.value}</dd>
+                <dd className="mt-1 text-sm text-brand-slate break-words whitespace-pre-wrap">{field.value}</dd>
               </div>
             ))}
           </dl>
@@ -170,12 +241,18 @@ export function ActivityDetailDrawer({
       </div>
 
       {actions ? (
-        <div className="mt-5 border-t border-brand-mist/70 pt-4">
+        <div className="mt-5 rounded-lg border border-brand-mist/70 bg-[#f8fafc] p-4">
           <h4 className="text-sm font-semibold uppercase tracking-wide text-brand-moss">Actions</h4>
           <p className="mt-1 text-sm text-brand-moss">Approve or reject this entry.</p>
           <div className="mt-3">{actions}</div>
         </div>
       ) : null}
-    </Card>
+    </>
   );
+
+  if (variant === "plain") {
+    return <div className="h-full p-6">{content}</div>;
+  }
+
+  return <Card className="h-full">{content}</Card>;
 }

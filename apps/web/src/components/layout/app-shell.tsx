@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -105,19 +105,18 @@ function SidebarIcon({ type }: { type: OverviewSidebarItem["icon"] | TenantSideb
   if (type === "roles") {
     return (
       <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <circle cx="8" cy="8" r="2.4" />
-        <circle cx="16" cy="8" r="2.4" />
-        <path d="M4.5 17c.8-2.2 2.3-3.3 4.5-3.3s3.7 1.1 4.5 3.3M13.5 17c.6-1.7 1.8-2.6 3.5-2.6 1.7 0 2.9.9 3.5 2.6" />
+        <path d="M12 3.5 18.5 6v5.8c0 3.9-2.6 7.4-6.5 8.7-3.9-1.3-6.5-4.8-6.5-8.7V6L12 3.5Z" />
+        <circle cx="12" cy="11" r="1.9" />
+        <path d="M12 13v2.5" />
       </svg>
     );
   }
   if (type === "departments") {
     return (
       <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <rect x="3.5" y="3.5" width="7" height="7" rx="1.3" />
-        <rect x="13.5" y="3.5" width="7" height="5.5" rx="1.3" />
-        <rect x="13.5" y="11.5" width="7" height="9" rx="1.3" />
-        <rect x="3.5" y="13.5" width="7" height="7" rx="1.3" />
+        <rect x="4.5" y="3.5" width="15" height="17" rx="1.8" />
+        <path d="M8 7.5h2M14 7.5h2M8 11.5h2M14 11.5h2M8 15.5h2M14 15.5h2" />
+        <path d="M10.5 20.5v-3.5h3v3.5" />
       </svg>
     );
   }
@@ -158,12 +157,43 @@ function SignOutIcon() {
   );
 }
 
+function OrganizationIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="5.5" r="2.2" />
+      <circle cx="6.5" cy="17.5" r="2.2" />
+      <circle cx="12" cy="17.5" r="2.2" />
+      <circle cx="17.5" cy="17.5" r="2.2" />
+      <path d="M12 7.7v4.2M12 11.9H6.5M12 11.9h5.5" />
+    </svg>
+  );
+}
+
+function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.9">
+      <path d="M7 5.5v13" />
+      {collapsed ? <path d="m11 8 4 4-4 4" /> : <path d="m15 8-4 4 4 4" />}
+    </svg>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const apiClient = useApiClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const meQuery = useMeQuery();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const storedValue = window.localStorage.getItem("timesheet_plus.sidebar_collapsed");
+    setSidebarCollapsed(storedValue === "true");
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("timesheet_plus.sidebar_collapsed", sidebarCollapsed ? "true" : "false");
+  }, [sidebarCollapsed]);
 
   const scope = searchParams.get("scope") ?? "";
   const tenantMatch = pathname.match(/^\/app\/tenants\/([^/]+)/);
@@ -231,20 +261,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             icon: "users"
           });
         }
-        if (canManageActivities) {
-          items.push({
-            href: tenantRoutes.activities(tenantIdFromPath),
-            label: "Activities",
-            matchPrefix: tenantRoutes.activities(tenantIdFromPath),
-            icon: "tasks"
-          });
-        }
-        items.push({
-          href: tenantRoutes.activityMine(tenantIdFromPath),
-          label: "My Activity",
-          matchPrefix: tenantRoutes.activityMine(tenantIdFromPath),
-          icon: "mine"
-        });
         if (canViewHodReview) {
           items.push({
             href: tenantRoutes.hodReview(tenantIdFromPath),
@@ -253,20 +269,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             icon: "review"
           });
         }
-        if (canManageRoles) {
-          items.push({
-            href: tenantRoutes.adminRoles(tenantIdFromPath),
-            label: "Roles",
-            matchPrefix: tenantRoutes.adminRoles(tenantIdFromPath),
-            icon: "roles"
-          });
-        }
+        items.push({
+          href: tenantRoutes.activityMine(tenantIdFromPath),
+          label: "My Activity",
+          matchPrefix: tenantRoutes.activityMine(tenantIdFromPath),
+          icon: "mine"
+        });
         if (canViewDepartments) {
           items.push({
             href: tenantRoutes.adminDepartments(tenantIdFromPath),
             label: "Departments",
             matchPrefix: tenantRoutes.adminDepartments(tenantIdFromPath),
             icon: "departments"
+          });
+        }
+        if (canManageActivities) {
+          items.push({
+            href: tenantRoutes.activities(tenantIdFromPath),
+            label: "Activities",
+            matchPrefix: tenantRoutes.activities(tenantIdFromPath),
+            icon: "tasks"
+          });
+        }
+        if (canManageRoles) {
+          items.push({
+            href: tenantRoutes.adminRoles(tenantIdFromPath),
+            label: "Roles",
+            matchPrefix: tenantRoutes.adminRoles(tenantIdFromPath),
+            icon: "roles"
           });
         }
         if (canManageInvites) {
@@ -282,6 +312,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : [];
   const tenantNameFromMembership = tenantMembership?.tenantName ?? null;
   const tenantTitle = tenantIdFromPath ? tenantNameFromMembership ?? "Unnamed Tenant" : "Tenant Overview";
+  const footerDashboardHref = "/app";
+  const footerDashboardLabel = "My Organization";
   const userName = meQuery.data?.user.name ?? auth.user?.name ?? "User";
   const userEmail = meQuery.data?.user.email ?? auth.user?.email ?? "unknown@example.com";
   const initials =
@@ -291,16 +323,55 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .map((chunk) => chunk[0]?.toUpperCase())
       .slice(0, 2)
       .join("") || "U";
+  const desktopGridColumns = sidebarCollapsed ? "md:grid-cols-[88px_1fr]" : "md:grid-cols-[256px_1fr]";
 
   return (
     <div className="min-h-screen bg-[#edeeef] text-[#191c1d] page-enter">
-      <div className="mx-auto min-h-screen max-w-[1440px] md:grid md:grid-cols-[256px_1fr]">
-        <aside className="flex flex-col bg-[#f8fafc] p-4 md:sticky md:top-0 md:h-screen md:max-h-screen md:self-start md:overflow-y-auto md:border-r md:border-[#e7e8e9]">
+      <div
+        className={classNames(
+          "mx-auto min-h-screen max-w-[1440px] md:grid md:transition-[grid-template-columns] md:duration-300 md:ease-in-out",
+          desktopGridColumns
+        )}
+      >
+        <aside
+          className={classNames(
+            "flex flex-col overflow-x-hidden bg-[#f8fafc] p-4 transition-[padding] duration-300 ease-in-out md:sticky md:top-0 md:h-screen md:max-h-screen md:self-start md:overflow-y-auto md:border-r md:border-[#e7e8e9]",
+            sidebarCollapsed && "md:px-3"
+          )}
+        >
           <div className="pb-4 pt-2">
-            <h2 className="text-[18px] font-semibold leading-7 text-[#0f172a]" style={{ fontFamily: "var(--font-body), sans-serif" }}>
-              Timesheet+
-            </h2>
-            <p className="mt-1 text-xs text-[#64748b]">{tenantIdFromPath ? "Tenant Portal" : "Tenant Overview"}</p>
+            <div
+              className={classNames(
+                "flex items-start transition-[gap] duration-300 ease-in-out",
+                sidebarCollapsed ? "justify-center gap-0" : "justify-between gap-2"
+              )}
+            >
+              <div
+                className={classNames(
+                  "min-w-0 overflow-hidden transition-[max-width,opacity] duration-300 ease-in-out",
+                  sidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[180px] opacity-100"
+                )}
+              >
+                <h2 className="text-[18px] font-semibold leading-7 text-[#0f172a]" style={{ fontFamily: "var(--font-body), sans-serif" }}>
+                  Timesheet+
+                </h2>
+                <p className={classNames("mt-1 text-xs text-[#64748b] transition-opacity duration-200", sidebarCollapsed && "opacity-0")}>
+                  {tenantIdFromPath ? "Tenant Portal" : "Tenant Overview"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className={classNames(
+                  "hidden h-9 w-9 place-items-center rounded-full text-[#475569] transition-all duration-300 ease-in-out hover:bg-[#edf0f4] md:grid",
+                  sidebarCollapsed ? "mx-auto" : "ml-auto"
+                )}
+                onClick={() => setSidebarCollapsed((current) => !current)}
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                <SidebarCollapseIcon collapsed={sidebarCollapsed} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 pt-2">
@@ -312,15 +383,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <Link
                         key={item.label}
                         href={item.href}
+                        title={sidebarCollapsed ? item.label : undefined}
+                        aria-label={sidebarCollapsed ? item.label : undefined}
                         className={classNames(
-                          "flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition",
+                          "group relative flex items-center rounded-xl text-sm transition-[padding,background-color,color] duration-300 ease-in-out",
+                          sidebarCollapsed ? "justify-center px-2 py-3" : "gap-3 px-4 py-3",
                           isActive
                             ? "bg-[#eff6ff] font-semibold text-[#1d4ed8]"
                             : "font-medium text-[#475569] hover:bg-[#edf0f4]"
                         )}
                       >
                         <SidebarIcon type={item.icon} />
-                        <span>{item.label}</span>
+                        <span
+                          aria-hidden={sidebarCollapsed}
+                          className={classNames(
+                            "overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-in-out",
+                            sidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[160px] opacity-100"
+                          )}
+                        >
+                          {item.label}
+                        </span>
                       </Link>
                     );
                   })
@@ -330,15 +412,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <Link
                         key={item.label}
                         href={item.href}
+                        title={sidebarCollapsed ? item.label : undefined}
+                        aria-label={sidebarCollapsed ? item.label : undefined}
                         className={classNames(
-                          "flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition",
+                          "group relative flex items-center rounded-xl text-sm transition-[padding,background-color,color] duration-300 ease-in-out",
+                          sidebarCollapsed ? "justify-center px-2 py-3" : "gap-3 px-4 py-3",
                           isActive
                             ? "bg-[#eff6ff] font-semibold text-[#1d4ed8]"
                             : "font-medium text-[#475569] hover:bg-[#edf0f4]"
                         )}
                       >
                         <SidebarIcon type={item.icon} />
-                        <span>{item.label}</span>
+                        <span
+                          aria-hidden={sidebarCollapsed}
+                          className={classNames(
+                            "overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-in-out",
+                            sidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[160px] opacity-100"
+                          )}
+                        >
+                          {item.label}
+                        </span>
                       </Link>
                     );
                   })}
@@ -346,15 +439,48 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="mt-4 border-t border-[#e2e8f0] pt-4">
+            <Link
+              href={footerDashboardHref}
+              title={sidebarCollapsed ? footerDashboardLabel : undefined}
+              aria-label={sidebarCollapsed ? footerDashboardLabel : undefined}
+              className={classNames(
+                "group relative mb-1 flex w-full items-center rounded-xl px-3 py-2 text-sm font-medium text-[#475569] transition-[padding,background-color,color] duration-300 ease-in-out hover:bg-[#edf0f4]",
+                sidebarCollapsed ? "justify-center" : "gap-3"
+              )}
+            >
+              <OrganizationIcon />
+              <span
+                aria-hidden={sidebarCollapsed}
+                className={classNames(
+                  "overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-in-out",
+                  sidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[140px] opacity-100"
+                )}
+              >
+                {footerDashboardLabel}
+              </span>
+            </Link>
             <button
               type="button"
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-[#475569] hover:bg-[#edf0f4]"
+              title={sidebarCollapsed ? "Sign Out" : undefined}
+              aria-label={sidebarCollapsed ? "Sign Out" : undefined}
+              className={classNames(
+                "group relative flex w-full items-center rounded-xl px-3 py-2 text-sm font-medium text-[#475569] transition-[padding,background-color,color] duration-300 ease-in-out hover:bg-[#edf0f4]",
+                sidebarCollapsed ? "justify-center" : "gap-3"
+              )}
               onClick={() => {
                 void auth.signOut();
               }}
             >
               <SignOutIcon />
-              <span>Sign Out</span>
+              <span
+                aria-hidden={sidebarCollapsed}
+                className={classNames(
+                  "overflow-hidden whitespace-nowrap transition-[max-width,opacity] duration-300 ease-in-out",
+                  sidebarCollapsed ? "max-w-0 opacity-0" : "max-w-[100px] opacity-100"
+                )}
+              >
+                Sign Out
+              </span>
             </button>
           </div>
         </aside>

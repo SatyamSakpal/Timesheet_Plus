@@ -1,4 +1,8 @@
 import { FIELD_CATALOG_SEED, PERMISSION_CATALOG_SEED } from "../../constants/master-catalog";
+import {
+  PRESET_DEPARTMENT_CATALOG_SEED,
+  PRESET_TASK_TEMPLATE_CATALOG_SEED
+} from "../../constants/preset-catalog";
 import { badRequest, forbidden, notFound } from "../../errors/app-error";
 import type { IDataStore } from "../../repositories/data-store";
 import {
@@ -11,6 +15,8 @@ import {
   type FieldCatalogEntity,
   type FieldType,
   type PermissionCatalogEntity,
+  type PresetDepartmentCatalogEntity,
+  type PresetTaskTemplateCatalogEntity,
   type TaskTemplateEntity,
   type TenantEntity,
   type TenantMembershipEntity,
@@ -150,6 +156,28 @@ export class PlatformCoreService {
     );
   }
 
+  protected async listPresetDepartmentCatalog(): Promise<PresetDepartmentCatalogEntity[]> {
+    await this.ensureMasterCatalogs();
+    const entries = await this.store.query<PresetDepartmentCatalogEntity>(
+      COLLECTIONS.presetDepartmentsCatalog,
+      []
+    );
+    return entries
+      .filter((entry) => entry.isActive)
+      .sort((left, right) => left.order - right.order);
+  }
+
+  protected async listPresetTaskTemplateCatalog(): Promise<PresetTaskTemplateCatalogEntity[]> {
+    await this.ensureMasterCatalogs();
+    const entries = await this.store.query<PresetTaskTemplateCatalogEntity>(
+      COLLECTIONS.presetTaskTemplatesCatalog,
+      []
+    );
+    return entries
+      .filter((entry) => entry.isActive)
+      .sort((left, right) => left.order - right.order);
+  }
+
   protected async createActivityApproval(
     tenantId: string,
     activityId: string,
@@ -231,6 +259,50 @@ export class PlatformCoreService {
         updatedAt: timestamp
       };
       await this.store.create(COLLECTIONS.fieldCatalog, entry);
+    }
+
+    for (const seed of PRESET_DEPARTMENT_CATALOG_SEED) {
+      const existing = await this.store.getById<PresetDepartmentCatalogEntity>(
+        COLLECTIONS.presetDepartmentsCatalog,
+        seed.key
+      );
+      if (existing) {
+        continue;
+      }
+      const entry: PresetDepartmentCatalogEntity = {
+        id: seed.key,
+        key: seed.key,
+        name: seed.name,
+        description: seed.description,
+        order: seed.order,
+        isActive: seed.isActive,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      await this.store.create(COLLECTIONS.presetDepartmentsCatalog, entry);
+    }
+
+    for (const seed of PRESET_TASK_TEMPLATE_CATALOG_SEED) {
+      const existing = await this.store.getById<PresetTaskTemplateCatalogEntity>(
+        COLLECTIONS.presetTaskTemplatesCatalog,
+        seed.key
+      );
+      if (existing) {
+        continue;
+      }
+      const entry: PresetTaskTemplateCatalogEntity = {
+        id: seed.key,
+        key: seed.key,
+        name: seed.name,
+        description: seed.description,
+        order: seed.order,
+        isActive: seed.isActive,
+        assignedDepartmentKeys: seed.assignedDepartmentKeys,
+        fields: seed.fields,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      await this.store.create(COLLECTIONS.presetTaskTemplatesCatalog, entry);
     }
 
     this.masterCatalogSeeded = true;

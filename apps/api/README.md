@@ -1,4 +1,4 @@
-﻿# TimesheetPlus API
+# TimesheetPlus API
 
 Backend service for multi-tenant activity logging, review, and administration.
 
@@ -32,6 +32,11 @@ When `MOCK_AUTH_ENABLED=true`, pass:
 
 ## Core Behavior
 - Tenant creation seeds system roles: `Owner`, `Head of Department`, `Staff`.
+- Master preset catalogs are used to bootstrap tenant domain data:
+  - preset departments
+  - preset activity templates and field schemas
+  - preset department-to-activity assignments.
+- Default `Other` activity is supported as a description-only activity and is maintained across departments as configured by platform services.
 - Invite-first membership lifecycle:
   - Invite creation does not create tenant membership.
   - Membership is created/activated only on invite acceptance.
@@ -40,6 +45,13 @@ When `MOCK_AUTH_ENABLED=true`, pass:
   - owner cannot be removed
   - self-removal is blocked
   - department member/HOD mappings are cleaned up on removal
+- Department deletion safeguards:
+  - delete blocked if users are still assigned
+  - blocking users are returned in error details.
+- Activity-template safeguards:
+  - template names are unique per tenant
+  - delete blocked if still assigned to departments
+  - blocking departments are returned in error details.
 - Tenant soft delete (`DELETE /tenants/:tenantId`) excludes deleted tenant from `/v1/me` memberships.
 - Activity creation enforces time-range overlap validation per user/date.
 
@@ -75,16 +87,18 @@ When `MOCK_AUTH_ENABLED=true`, pass:
 ### Departments
 - `POST /v1/tenants/:tenantId/departments`
 - `GET /v1/tenants/:tenantId/departments`
+- `DELETE /v1/tenants/:tenantId/departments/:departmentId`
 - `POST /v1/tenants/:tenantId/departments/:departmentId/members`
 - `POST /v1/tenants/:tenantId/departments/:departmentId/hods`
 - `GET /v1/tenants/:tenantId/departments/:departmentId/members`
 - `GET /v1/tenants/:tenantId/departments/:departmentId/hods`
 - `GET /v1/tenants/:tenantId/departments/:departmentId/contributors`
 
-### Tasks
+### Activity templates
 - `POST /v1/tenants/:tenantId/task-templates`
 - `GET /v1/tenants/:tenantId/task-templates`
 - `PATCH /v1/tenants/:tenantId/task-templates/:taskTemplateId`
+- `DELETE /v1/tenants/:tenantId/task-templates/:taskTemplateId`
 - `POST /v1/tenants/:tenantId/departments/:departmentId/tasks/:taskTemplateId`
 - `DELETE /v1/tenants/:tenantId/departments/:departmentId/tasks/:taskTemplateId`
 - `GET /v1/tenants/:tenantId/departments/:departmentId/tasks`

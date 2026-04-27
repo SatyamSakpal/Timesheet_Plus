@@ -1,7 +1,8 @@
 "use client";
 
 import type { TaskTemplate } from "@/lib/types";
-import { Label, Select } from "@/components/ui/primitives";
+import { Label } from "@/components/ui/primitives";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 export function TaskTemplateSelect({
   templates,
@@ -17,20 +18,17 @@ export function TaskTemplateSelect({
   return (
     <div>
       <Label htmlFor="task-template-select">Task</Label>
-      <Select
+      <SearchableSelect
         id="task-template-select"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
         disabled={disabled}
-        required
-      >
-        <option value="">{disabled ? "Select department first" : "Select task"}</option>
-        {templates.map((template) => (
-          <option key={template.id} value={template.id}>
-            {template.name} (v{template.version})
-          </option>
-        ))}
-      </Select>
+        placeholder={disabled ? "Select department first" : "Select task"}
+        options={[
+          { value: "", label: disabled ? "Select department first" : "Select task" },
+          ...templates.map((template) => ({ value: template.id, label: template.name }))
+        ]}
+      />
     </div>
   );
 }

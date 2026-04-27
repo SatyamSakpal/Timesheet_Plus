@@ -1,4 +1,4 @@
-﻿# TimesheetPlus Web (`apps/web`)
+# TimesheetPlus Web (`apps/web`)
 
 Next.js + TypeScript frontend for the TimesheetPlus backend.
 
@@ -54,7 +54,17 @@ Next.js + TypeScript frontend for the TimesheetPlus backend.
 
 ## Current UX and Permission Behavior
 - Sidebar tenant links render conditionally based on effective tenant permissions.
-- Tenant title is shown in the top header (left side) for tenant-scoped pages.
+- Sidebar is collapsible with animation and fixed collapsed icon alignment.
+- Sidebar order is:
+  - Dashboard
+  - Users
+  - HOD Review
+  - My Activity
+  - Department
+  - Activities
+  - Roles
+  - Invites
+- Sidebar includes a bottom `My Organization` link to `/app`.
 - `Enter Portal` resolves destination by role/permissions:
   - owner -> owner dashboard
   - HOD/report-capable member -> owner dashboard route
@@ -63,6 +73,16 @@ Next.js + TypeScript frontend for the TimesheetPlus backend.
   - `Accept`
   - `Reject`
 - Users page supports tenant-member removal (permission-gated) with custom confirmation modal.
+- Department, activity, and member/contributor selectors use searchable dropdowns.
+- Modal behavior is standardized:
+  - viewport-centered overlay
+  - rounded outer shell with clipped corners
+  - inner scroll container with stable scrollbar gutter
+- HOD review page supports:
+  - logs + people summary split layout
+  - all-departments aggregate filter (for multi-department HODs)
+  - row details modal
+  - selection mode for row-based multi-select and bulk approve/reject.
 
 ## Notes
 - Frontend integrates through backend REST APIs only.

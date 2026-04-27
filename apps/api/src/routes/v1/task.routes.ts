@@ -67,6 +67,18 @@ scopedTenantRouter.patch(
   })
 );
 
+scopedTenantRouter.delete(
+  "/task-templates/:taskTemplateId",
+  requirePermission(PERMISSIONS.taskTemplateManage),
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const taskTemplateId = param(req, "taskTemplateId");
+    const deletedTemplate = await service.deleteTaskTemplate(tenantId, taskTemplateId, req.user!.uid);
+    res.json({ data: deletedTemplate });
+  })
+);
+
 scopedTenantRouter.post(
   "/departments/:departmentId/tasks/:taskTemplateId",
   asyncHandler(async (req, res) => {

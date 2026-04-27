@@ -3,6 +3,8 @@ export const COLLECTIONS = {
   tenants: "tenants",
   permissionCatalog: "permission_catalog",
   fieldCatalog: "field_catalog",
+  presetDepartmentsCatalog: "preset_departments_catalog",
+  presetTaskTemplatesCatalog: "preset_task_templates_catalog",
   tenantMemberships: "tenant_memberships",
   tenantRoles: "tenant_roles",
   tenantInvites: "tenant_invites",
@@ -63,6 +65,24 @@ export interface FieldCatalogEntity extends BaseEntity {
   supportsNumericRange: boolean;
   configurable: boolean;
   order: number;
+}
+
+export interface PresetDepartmentCatalogEntity extends BaseEntity {
+  key: string;
+  name: string;
+  description?: string;
+  order: number;
+  isActive: boolean;
+}
+
+export interface PresetTaskTemplateCatalogEntity extends BaseEntity {
+  key: string;
+  name: string;
+  description?: string;
+  order: number;
+  isActive: boolean;
+  assignedDepartmentKeys: string[];
+  fields: TaskFieldSchema[];
 }
 
 export interface TenantEntity extends BaseEntity {
@@ -134,6 +154,7 @@ export interface TaskFieldSchema {
 
 export interface TaskTemplateEntity extends BaseEntity {
   tenantId: string;
+  key?: string;
   name: string;
   description?: string;
   version: number;

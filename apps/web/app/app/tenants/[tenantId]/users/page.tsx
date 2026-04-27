@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { TenantRequired } from "@/components/layout/tenant-required";
+import { ModalOverlay } from "@/components/ui/modal-overlay";
 import { useActiveTenant } from "@/hooks/use-active-tenant";
 import { useApiClient } from "@/hooks/use-api-client";
 import { useTenantPermissions } from "@/hooks/use-tenant-permissions";
@@ -423,92 +424,89 @@ export default function TenantUsersPage() {
       ) : null}
 
       {selectedUserForRemoval ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/55 p-4"
-          onClick={closeRemoveUserModal}
-        >
+        <ModalOverlay onClose={closeRemoveUserModal}>
           <section
-            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
+            className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
-                  Remove User
-                </h2>
-                <p className="mt-1 text-sm text-[#64748b]">
-                  This will remove the user from the tenant and department assignments.
-                </p>
+            <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+                    Remove User
+                  </h2>
+                  <p className="mt-1 text-sm text-[#64748b]">
+                    This will remove the user from the tenant and department assignments.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-sm font-semibold text-[#64748b] hover:bg-[#f1f5f9]"
+                  onClick={closeRemoveUserModal}
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-sm font-semibold text-[#64748b] hover:bg-[#f1f5f9]"
-                onClick={closeRemoveUserModal}
-              >
-                Close
-              </button>
-            </div>
 
-            <div className="mt-4 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-3">
-              <p className="font-semibold text-[#0f172a]">{selectedUserForRemoval.name}</p>
-              <p className="text-sm text-[#64748b]">{selectedUserForRemoval.email}</p>
-            </div>
+              <div className="mt-4 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-3">
+                <p className="font-semibold text-[#0f172a]">{selectedUserForRemoval.name}</p>
+                <p className="text-sm text-[#64748b]">{selectedUserForRemoval.email}</p>
+              </div>
 
-            {removeError ? (
-              <p className="mt-4 rounded-lg border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-sm text-[#b42318]">
-                {removeError}
-              </p>
-            ) : null}
+              {removeError ? (
+                <p className="mt-4 rounded-lg border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-sm text-[#b42318]">
+                  {removeError}
+                </p>
+              ) : null}
 
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
-                onClick={closeRemoveUserModal}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded-lg bg-[#b42318] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={onRemoveMemberConfirm}
-                disabled={removeMemberMutation.isPending}
-              >
-                {removeMemberMutation.isPending ? "Removing..." : "Remove User"}
-              </button>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                  onClick={closeRemoveUserModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-[#b42318] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={onRemoveMemberConfirm}
+                  disabled={removeMemberMutation.isPending}
+                >
+                  {removeMemberMutation.isPending ? "Removing..." : "Remove User"}
+                </button>
+              </div>
             </div>
           </section>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {isAddUserModalOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/55 p-4"
-          onClick={closeAddUserModal}
-        >
+        <ModalOverlay onClose={closeAddUserModal}>
           <section
-            className="w-full max-w-xl rounded-xl bg-white p-6 shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
+            className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
-                  Add User
-                </h2>
-                <p className="mt-1 text-sm text-[#64748b]">
-                  Invite a user with tenant role and optional home department assignment.
-                </p>
+            <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+                    Add User
+                  </h2>
+                  <p className="mt-1 text-sm text-[#64748b]">
+                    Invite a user with tenant role and optional home department assignment.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-sm font-semibold text-[#64748b] hover:bg-[#f1f5f9]"
+                  onClick={closeAddUserModal}
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-sm font-semibold text-[#64748b] hover:bg-[#f1f5f9]"
-                onClick={closeAddUserModal}
-              >
-                Close
-              </button>
-            </div>
 
-            <form className="mt-5 space-y-4" onSubmit={onInviteSubmit}>
+              <form className="mt-5 space-y-4" onSubmit={onInviteSubmit}>
               <div>
                 <label htmlFor="invite-email" className="mb-1 block text-xs font-semibold uppercase tracking-[0.06em] text-[#475569]">
                   Email
@@ -598,9 +596,10 @@ export default function TenantUsersPage() {
                   {inviteMutation.isPending ? "Sending..." : "Send Invite"}
                 </button>
               </div>
-            </form>
+              </form>
+            </div>
           </section>
-        </div>
+        </ModalOverlay>
       ) : null}
     </div>
   );

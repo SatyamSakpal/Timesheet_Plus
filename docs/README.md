@@ -1,4 +1,6 @@
-﻿# TimesheetPlus Documentation Index
+# TimesheetPlus Documentation Index
+
+Last updated: 2026-04-27
 
 ## Start Here
 1. `docs/project-overview-status.md` - current product and implementation status.
@@ -22,3 +24,4 @@
 ## Notes
 - This repository has both app-specific and project-level docs.
 - Keep `apps/api/README.md`, `apps/web/README.md`, and `docs/project-overview-status.md` in sync when behavior changes.
+- Keep UX-heavy updates (sidebar, modal system, HOD review flow) reflected in `docs/frontend-implementation-plan.md`.

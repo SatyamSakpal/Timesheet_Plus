@@ -7,6 +7,10 @@ import { badRequest, forbidden, notFound } from "../../errors/app-error";
 import {
   COLLECTIONS,
   type AuthenticatedUser,
+  type DepartmentEntity,
+  type DepartmentTaskEntity,
+  type PresetTaskTemplateCatalogEntity,
+  type TaskTemplateEntity,
   type TenantContext,
   type TenantEntity,
   type TenantInviteEntity,
@@ -53,6 +57,7 @@ export class TenantRoleService extends PlatformCoreService {
     await this.store.create(COLLECTIONS.tenants, tenant);
     const seededRoles = await this.bootstrapDefaultRoles(tenant.id, timestamp);
     const ownerRole = seededRoles.find((role) => role.key === SYSTEM_ROLE_KEYS.owner);
+    await this.bootstrapPresetDepartmentsAndTasks(tenant.id, ownerUser.uid, timestamp);
 
     const ownerMembership: TenantMembershipEntity = {
       id: tenantMembershipId(tenant.id, ownerUser.uid),
@@ -706,6 +711,91 @@ export class TenantRoleService extends PlatformCoreService {
       roles.push(role);
     }
     return roles;
+  }
+
+  private async bootstrapPresetDepartmentsAndTasks(
+    tenantId: string,
+    actorUserId: string,
+    timestamp: string
+  ): Promise<void> {
+    const presetDepartments = await this.listPresetDepartmentCatalog();
+    const presetTaskTemplates = await this.listPresetTaskTemplateCatalog();
+
+    const fieldTypes = [
+      ...new Set(
+        presetTaskTemplates.flatMap((template) => template.fields.map((field) => field.type))
+      )
+    ];
+    await this.assertFieldTypesConfigured(fieldTypes);
+
+    const departmentIdByPresetKey = new Map<string, string>();
+    for (const presetDepartment of presetDepartments) {
+      const department: DepartmentEntity = {
+        id: newId(),
+        tenantId,
+        name: presetDepartment.name,
+        description: presetDepartment.description,
+        createdBy: actorUserId,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      await this.store.create(COLLECTIONS.departments, department);
+      departmentIdByPresetKey.set(presetDepartment.key, department.id);
+    }
+
+    for (const presetTaskTemplate of presetTaskTemplates) {
+      const taskTemplate: TaskTemplateEntity = {
+        id: newId(),
+        tenantId,
+        key: presetTaskTemplate.key,
+        name: presetTaskTemplate.name,
+        description: presetTaskTemplate.description,
+        version: 1,
+        fields: this.clonePresetFields(presetTaskTemplate.fields),
+        createdBy: actorUserId,
+        isActive: true,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      await this.store.create(COLLECTIONS.taskTemplates, taskTemplate);
+
+      const departmentIds = this.resolvePresetTemplateDepartmentIds(
+        presetTaskTemplate,
+        departmentIdByPresetKey
+      );
+      for (const departmentId of departmentIds) {
+        const assignment: DepartmentTaskEntity = {
+          id: newId(),
+          tenantId,
+          departmentId,
+          taskTemplateId: taskTemplate.id,
+          assignedBy: actorUserId,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        };
+        await this.store.create(COLLECTIONS.departmentTasks, assignment);
+      }
+    }
+  }
+
+  private resolvePresetTemplateDepartmentIds(
+    template: PresetTaskTemplateCatalogEntity,
+    departmentIdByPresetKey: Map<string, string>
+  ): string[] {
+    if (template.assignedDepartmentKeys.includes("*")) {
+      return [...departmentIdByPresetKey.values()];
+    }
+    const ids = template.assignedDepartmentKeys
+      .map((departmentKey) => departmentIdByPresetKey.get(departmentKey))
+      .filter((departmentId): departmentId is string => Boolean(departmentId));
+    return [...new Set(ids)];
+  }
+
+  private clonePresetFields(fields: TaskTemplateEntity["fields"]): TaskTemplateEntity["fields"] {
+    return fields.map((field) => ({
+      ...field,
+      options: field.options ? [...field.options] : undefined
+    }));
   }
 
   private async resolveRoleIdsForMembership(

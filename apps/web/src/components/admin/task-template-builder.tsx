@@ -12,6 +12,27 @@ interface EditableField extends TaskFieldSchema {
   optionsText: string;
 }
 
+function toFieldKeyFromLabel(label: string): string {
+  const normalized = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "field";
+}
+
+function makeUniqueFieldKey(base: string, usedKeys: Set<string>): string {
+  const normalizedBase = base.trim() || "field";
+  let candidate = normalizedBase;
+  let suffix = 2;
+  while (usedKeys.has(candidate.toLowerCase())) {
+    candidate = `${normalizedBase}_${suffix}`;
+    suffix += 1;
+  }
+  usedKeys.add(candidate.toLowerCase());
+  return candidate;
+}
+
 function createEditableField(field?: TaskFieldSchema): EditableField {
   const options = field?.options ?? [];
   return {
@@ -152,9 +173,10 @@ export function TaskTemplateBuilder({
       return;
     }
     const parsedFields: TaskFieldSchema[] = [];
+    const usedKeys = new Set<string>();
     for (const field of fields) {
-      if (!field.key.trim() || !field.label.trim()) {
-        setError("Each field requires key and label.");
+      if (!field.label.trim()) {
+        setError("Each field requires a label.");
         return;
       }
       const parsedOptions =
@@ -168,8 +190,10 @@ export function TaskTemplateBuilder({
         setError(`Field "${field.label}" needs at least one option.`);
         return;
       }
+      const baseKey = field.key.trim() || toFieldKeyFromLabel(field.label);
+      const nextKey = makeUniqueFieldKey(baseKey, usedKeys);
       parsedFields.push({
-        key: field.key.trim(),
+        key: nextKey,
         label: field.label.trim(),
         type: field.type,
         required: field.required,
@@ -247,15 +271,6 @@ export function TaskTemplateBuilder({
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-moss">Field {index + 1}</p>
               <div className="grid gap-2 md:grid-cols-2">
                 <div>
-                  <Label>Key</Label>
-                  <Input
-                    value={field.key}
-                    onChange={(event) => updateField(field.id, { key: event.target.value })}
-                    placeholder="hours"
-                    disabled={isReadOnly}
-                  />
-                </div>
-                <div>
                   <Label>Label</Label>
                   <Input
                     value={field.label}
@@ -263,6 +278,9 @@ export function TaskTemplateBuilder({
                     placeholder="Hours"
                     disabled={isReadOnly}
                   />
+                  <p className="mt-1 text-xs text-brand-moss">
+                    Internal key is auto-generated from this label.
+                  </p>
                 </div>
                 <div>
                   <Label>Type</Label>

@@ -1,20 +1,20 @@
-﻿# TimesheetPlus Frontend Implementation Reference
+# TimesheetPlus Frontend Implementation Reference
 
-Snapshot date: 2026-04-25
+Snapshot date: 2026-04-27
 
-This file captures the frontend architecture and the implemented behavior baseline for `apps/web`.
+This file captures the frontend architecture and current behavior baseline for `apps/web`.
 
 ## 1) Objective
 Deliver a tenant-aware frontend with:
 - role-sensitive navigation and access
 - activity logging and review workflows
-- tenant administration (users, roles, invites, departments, tasks)
+- tenant administration (users, roles, invites, departments, activities)
 
 ## 2) Architecture
 - Framework: Next.js App Router + TypeScript
 - Styling: Tailwind + local UI primitives
 - State:
-  - React Query for server-state
+  - React Query for server state
   - lightweight client store for active tenant/session UI state
 - API integration:
   - typed REST client
@@ -62,18 +62,35 @@ Deliver a tenant-aware frontend with:
 
 ## 5) Key Implemented UX Rules
 - Sidebar links render conditionally from effective tenant permissions.
-- Tenant title appears in header on tenant-scoped pages.
-- Pending invites on `/app` support both accept and reject actions.
-- Users page supports tenant-member removal with custom confirmation modal.
-- Activity forms enforce overlap validation feedback for same-day time ranges.
+- Sidebar is collapsible with animated transitions and icon-only mode support.
+- Sidebar order is:
+  - Dashboard
+  - Users
+  - HOD Review
+  - My Activity
+  - Department
+  - Activities
+  - Roles
+  - Invites
+- Sidebar includes `My Organization` at the bottom, linking to `/app`.
+- Dropdowns on activity/member/department selectors use searchable selects.
+- Modal pattern uses:
+  - `ModalOverlay` for backdrop and viewport-centering
+  - rounded outer shell with `overflow-hidden`
+  - inner scroll container with stable scrollbar gutter
+- HOD review:
+  - logs and people summary in side-by-side cards
+  - logs row click opens detail modal (normal mode)
+  - selection mode supports row-based multi-select + bulk approve/reject
+  - all-departments aggregate mode shows contributors only in people panel.
 
 ## 6) API Dependencies
 Frontend depends on these backend capabilities:
 - `/v1/me`, catalogs, tenant/invite/role/member/user APIs
-- department, task-template, and activity APIs
+- department, activity-template, and activity APIs
 - invite accept/reject and member removal endpoints
 
 ## 7) Remaining Frontend Hardening
 - Expand E2E coverage for complete role-based flows.
-- Run deeper accessibility pass on modals and table-heavy screens.
+- Run deeper accessibility pass on modal and table interactions.
 - Add release and monitoring documentation for production rollouts.

@@ -50,6 +50,18 @@ scopedDepartmentRouter.post(
   })
 );
 
+scopedDepartmentRouter.delete(
+  "/:departmentId",
+  requirePermission(PERMISSIONS.departmentManage),
+  asyncHandler(async (req, res) => {
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const departmentId = param(req, "departmentId");
+    const deletedDepartment = await service.deleteDepartment(tenantId, departmentId, req.user!.uid);
+    res.json({ data: deletedDepartment });
+  })
+);
+
 scopedDepartmentRouter.get(
   "/",
   asyncHandler(async (req, res) => {

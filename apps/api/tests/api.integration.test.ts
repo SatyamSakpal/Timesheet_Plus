@@ -374,10 +374,76 @@ describe("TimesheetPlus API", () => {
 
     expect(departmentsRes.status).toBe(200);
     const departments = departmentsRes.body.data as Array<{ id: string; tenantId: string; name: string }>;
-    expect(departments).toHaveLength(2);
+    expect(departments.length).toBeGreaterThanOrEqual(2);
     expect(departments.every((department) => department.tenantId === base.tenantId)).toBe(true);
     const departmentIds = departments.map((department) => department.id);
     expect(departmentIds).toEqual(expect.arrayContaining([base.depAId, base.depBId]));
+  });
+
+  it("seeds preset departments and activities on tenant creation and auto-assigns Other Activity to new departments", async () => {
+    const app = createApp();
+
+    const tenantRes = await withAuth(
+      request(app).post("/v1/tenants").send({ name: "Tenant Presets" }),
+      owner
+    );
+    expect(tenantRes.status).toBe(201);
+    const tenantId = tenantRes.body.data.id as string;
+
+    const departmentsRes = await withAuth(
+      request(app).get(`/v1/tenants/${tenantId}/departments`),
+      owner
+    );
+    expect(departmentsRes.status).toBe(200);
+    const departments = departmentsRes.body.data as Array<{ id: string; name: string }>;
+    const departmentNames = departments.map((department) => department.name);
+    expect(departmentNames).toEqual(
+      expect.arrayContaining([
+        "Junior College",
+        "BCA",
+        "BSc IT",
+        "BCom",
+        "BBA",
+        "BA",
+        "MSc IT"
+      ])
+    );
+
+    const taskTemplatesRes = await withAuth(
+      request(app).get(`/v1/tenants/${tenantId}/task-templates`),
+      owner
+    );
+    expect(taskTemplatesRes.status).toBe(200);
+    const templates = taskTemplatesRes.body.data as Array<{ id: string; name: string; key?: string }>;
+    const otherTemplate = templates.find((template) => template.key === "other_activity");
+    expect(otherTemplate).toBeTruthy();
+    expect(templates.map((template) => template.name)).toContain("Other Activity");
+
+    const bcaDepartment = departments.find((department) => department.name === "BCA");
+    expect(bcaDepartment).toBeTruthy();
+
+    const bcaTasksRes = await withAuth(
+      request(app).get(`/v1/tenants/${tenantId}/departments/${bcaDepartment!.id}/tasks`),
+      owner
+    );
+    expect(bcaTasksRes.status).toBe(200);
+    const bcaTaskNames = (bcaTasksRes.body.data as Array<{ name: string }>).map((task) => task.name);
+    expect(bcaTaskNames).toContain("Other Activity");
+
+    const customDepartmentRes = await withAuth(
+      request(app).post(`/v1/tenants/${tenantId}/departments`).send({ name: "New Programme Department" }),
+      owner
+    );
+    expect(customDepartmentRes.status).toBe(201);
+    const customDepartmentId = customDepartmentRes.body.data.id as string;
+
+    const customDepartmentTasksRes = await withAuth(
+      request(app).get(`/v1/tenants/${tenantId}/departments/${customDepartmentId}/tasks`),
+      owner
+    );
+    expect(customDepartmentTasksRes.status).toBe(200);
+    const customTaskNames = (customDepartmentTasksRes.body.data as Array<{ name: string }>).map((task) => task.name);
+    expect(customTaskNames).toContain("Other Activity");
   });
 
   it("lists tenant members with role names", async () => {
@@ -520,6 +586,48 @@ describe("TimesheetPlus API", () => {
     expect(updateRes.body.data.version).toBe(template.version + 1);
   });
 
+  it("rejects creating a second activity with the same name in a tenant", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const duplicateCreate = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/task-templates`).send({
+        name: "Code Review Task",
+        fields: [{ key: "notes", label: "Notes", type: "textarea", required: true }]
+      }),
+      owner
+    );
+
+    expect(duplicateCreate.status).toBe(400);
+    expect(String(duplicateCreate.body.error?.message ?? "")).toContain("Activity name already exists");
+  });
+
+  it("rejects renaming an activity to an existing activity name in the same tenant", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const secondTemplate = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/task-templates`).send({
+        name: "Department Seminar",
+        fields: [{ key: "summary", label: "Summary", type: "textarea", required: true }]
+      }),
+      owner
+    );
+    expect(secondTemplate.status).toBe(201);
+    const secondTemplateId = secondTemplate.body.data.id as string;
+
+    const duplicateRename = await withAuth(
+      request(app).patch(`/v1/tenants/${base.tenantId}/task-templates/${secondTemplateId}`).send({
+        name: "Code Review Task",
+        fields: [{ key: "summary", label: "Summary", type: "textarea", required: true }]
+      }),
+      owner
+    );
+
+    expect(duplicateRename.status).toBe(400);
+    expect(String(duplicateRename.body.error?.message ?? "")).toContain("Activity name already exists");
+  });
+
   it("deletes unassigned custom role and blocks deleting assigned role with user list", async () => {
     const app = createApp();
     const base = await setupBase(app);
@@ -598,6 +706,62 @@ describe("TimesheetPlus API", () => {
     );
     expect(after.status).toBe(200);
     expect((after.body.data as Array<{ id: string }>).map((task) => task.id)).not.toContain(base.taskTemplateId);
+  });
+
+  it("blocks deleting an activity when assigned and returns assigned departments, then allows after unassign", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const blockedDelete = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/task-templates/${base.taskTemplateId}`),
+      owner
+    );
+    expect(blockedDelete.status).toBe(400);
+    expect(String(blockedDelete.body.error?.message ?? "")).toContain("assigned");
+    const assignedDepartments = blockedDelete.body.error?.details?.assignedDepartments as Array<{ id: string; name: string }> | undefined;
+    expect(assignedDepartments?.some((department) => department.id === base.depBId)).toBe(true);
+
+    const unassign = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/departments/${base.depBId}/tasks/${base.taskTemplateId}`),
+      owner
+    );
+    expect(unassign.status).toBe(204);
+
+    const deleted = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/task-templates/${base.taskTemplateId}`),
+      owner
+    );
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data.id).toBe(base.taskTemplateId);
+  });
+
+  it("blocks deleting a department with assigned users and returns user list, then allows after reassignment", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const blockedDelete = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/departments/${base.depAId}`),
+      owner
+    );
+    expect(blockedDelete.status).toBe(400);
+    expect(String(blockedDelete.body.error?.message ?? "")).toContain("users are still assigned");
+    const assignedUsers = blockedDelete.body.error?.details?.assignedUsers as Array<{ userId: string; reasons: string[] }> | undefined;
+    expect(assignedUsers?.some((user) => user.userId === worker.id)).toBe(true);
+
+    const moveWorkerHome = await withAuth(
+      request(app)
+        .patch(`/v1/tenants/${base.tenantId}/users/${worker.id}/home-department`)
+        .send({ homeDepartmentId: base.depBId }),
+      owner
+    );
+    expect(moveWorkerHome.status).toBe(200);
+
+    const deleted = await withAuth(
+      request(app).delete(`/v1/tenants/${base.tenantId}/departments/${base.depAId}`),
+      owner
+    );
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data.id).toBe(base.depAId);
   });
 
   it("returns user detail and allows owner to update home department", async () => {

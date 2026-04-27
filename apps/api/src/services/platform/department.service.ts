@@ -6,6 +6,8 @@ import {
   type DepartmentEntity,
   type DepartmentHodEntity,
   type DepartmentMembershipEntity,
+  type DepartmentTaskEntity,
+  type TaskTemplateEntity,
   type TenantMembershipEntity,
   type TenantRoleEntity,
   type UserEntity
@@ -46,8 +48,84 @@ export class DepartmentService extends TenantRoleService {
       updatedAt: timestamp
     };
     await this.store.create(COLLECTIONS.departments, department);
+    await this.assignDefaultOtherTaskToDepartment(tenantId, department.id, actorUserId, timestamp);
     await this.createAuditLog(tenantId, actorUserId, "department.create", "department", department.id, {
       name: department.name
+    });
+    return department;
+  }
+
+  async deleteDepartment(
+    tenantId: string,
+    departmentId: string,
+    actorUserId: string
+  ): Promise<DepartmentEntity> {
+    const department = await this.getDepartmentOrThrow(tenantId, departmentId);
+
+    const [homeDepartmentMemberships, explicitMemberships, hodAssignments] = await Promise.all([
+      this.store.query<TenantMembershipEntity>(COLLECTIONS.tenantMemberships, [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "homeDepartmentId", op: "==", value: departmentId }
+      ]),
+      this.store.query<DepartmentMembershipEntity>(COLLECTIONS.departmentMemberships, [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "departmentId", op: "==", value: departmentId }
+      ]),
+      this.store.query<DepartmentHodEntity>(COLLECTIONS.departmentHods, [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "departmentId", op: "==", value: departmentId }
+      ])
+    ]);
+
+    const userReasonMap = new Map<string, Set<string>>();
+    for (const membership of homeDepartmentMemberships) {
+      if (!userReasonMap.has(membership.userId)) {
+        userReasonMap.set(membership.userId, new Set<string>());
+      }
+      userReasonMap.get(membership.userId)!.add("Home Department");
+    }
+    for (const membership of explicitMemberships) {
+      if (!userReasonMap.has(membership.userId)) {
+        userReasonMap.set(membership.userId, new Set<string>());
+      }
+      userReasonMap.get(membership.userId)!.add("Department Member");
+    }
+    for (const hodAssignment of hodAssignments) {
+      if (!userReasonMap.has(hodAssignment.userId)) {
+        userReasonMap.set(hodAssignment.userId, new Set<string>());
+      }
+      userReasonMap.get(hodAssignment.userId)!.add("HOD");
+    }
+
+    if (userReasonMap.size > 0) {
+      const users = await this.getUsersByIds([...userReasonMap.keys()]);
+      const userById = new Map(users.map((user) => [user.id, user]));
+      const assignedUsers = [...userReasonMap.entries()]
+        .map(([userId, reasons]) => ({
+          userId,
+          name: userById.get(userId)?.name ?? userId,
+          email: userById.get(userId)?.email ?? "unknown@example.com",
+          reasons: [...reasons].sort()
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      badRequest(
+        `Cannot delete department "${department.name}" because users are still assigned to it.`,
+        { assignedUsers }
+      );
+    }
+
+    const departmentTasks = await this.store.query<DepartmentTaskEntity>(COLLECTIONS.departmentTasks, [
+      { field: "tenantId", op: "==", value: tenantId },
+      { field: "departmentId", op: "==", value: departmentId }
+    ]);
+    for (const assignment of departmentTasks) {
+      await this.store.delete(COLLECTIONS.departmentTasks, assignment.id);
+    }
+
+    await this.store.delete(COLLECTIONS.departments, department.id);
+    await this.createAuditLog(tenantId, actorUserId, "department.delete", "department", department.id, {
+      name: department.name,
+      removedTaskAssignmentCount: departmentTasks.length
     });
     return department;
   }
@@ -642,5 +720,54 @@ export class DepartmentService extends TenantRoleService {
       uniqueDepartments: departmentIds.size,
       latestActivityAt: activities[0]?.createdAt ?? null
     };
+  }
+
+  private async assignDefaultOtherTaskToDepartment(
+    tenantId: string,
+    departmentId: string,
+    actorUserId: string,
+    timestamp: string
+  ): Promise<void> {
+    const otherTemplate = await this.store.query<TaskTemplateEntity>(COLLECTIONS.taskTemplates, [
+      { field: "tenantId", op: "==", value: tenantId },
+      { field: "key", op: "==", value: "other_activity" },
+      { field: "isActive", op: "==", value: true }
+    ], { limit: 1 });
+
+    if (otherTemplate.length === 0) {
+      return;
+    }
+
+    const existingAssignment = await this.store.query<DepartmentTaskEntity>(
+      COLLECTIONS.departmentTasks,
+      [
+        { field: "tenantId", op: "==", value: tenantId },
+        { field: "departmentId", op: "==", value: departmentId },
+        { field: "taskTemplateId", op: "==", value: otherTemplate[0].id }
+      ],
+      { limit: 1 }
+    );
+    if (existingAssignment.length > 0) {
+      return;
+    }
+
+    const assignment: DepartmentTaskEntity = {
+      id: newId(),
+      tenantId,
+      departmentId,
+      taskTemplateId: otherTemplate[0].id,
+      assignedBy: actorUserId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    await this.store.create(COLLECTIONS.departmentTasks, assignment);
+    await this.createAuditLog(
+      tenantId,
+      actorUserId,
+      "department.task.assign",
+      "department",
+      departmentId,
+      { taskTemplateId: otherTemplate[0].id, source: "default_other" }
+    );
   }
 }
