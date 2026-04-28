@@ -1,6 +1,6 @@
 # TimesheetPlus Frontend Implementation Reference
 
-Snapshot date: 2026-04-27
+Snapshot date: 2026-04-28
 
 This file captures the frontend architecture and current behavior baseline for `apps/web`.
 
@@ -83,6 +83,13 @@ Deliver a tenant-aware frontend with:
   - logs row click opens detail modal (normal mode)
   - selection mode supports row-based multi-select + bulk approve/reject
   - all-departments aggregate mode shows contributors only in people panel.
+- My Activity:
+  - current-week default date filter on initial load
+  - date-tag arrows shift selected day/range window backward/forward
+  - forward date shift blocked until the next window has started
+  - copy-previous-week opens preview modal with confirm step
+  - entries rendered as table rows with row-click detail modal
+  - edit modal available only for owner logs in `submitted` or `rejected` status.
 
 ## 6) API Dependencies
 Frontend depends on these backend capabilities:

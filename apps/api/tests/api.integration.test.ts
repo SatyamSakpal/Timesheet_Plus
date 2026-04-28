@@ -196,6 +196,117 @@ describe("TimesheetPlus API", () => {
     expect(String(overlapping.body.error?.message ?? "")).toContain("Time range overlaps");
   });
 
+  it("allows creator to edit a submitted activity", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const created = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        ...activityWindow,
+        payload: { description: "Initial entry", hours: 1.5 },
+        status: "submitted"
+      }),
+      worker
+    );
+    expect(created.status).toBe(201);
+    const activityId = created.body.data.id as string;
+
+    const edited = await withAuth(
+      request(app).patch(`/v1/tenants/${base.tenantId}/activities/${activityId}`).send({
+        activityDate: "2026-04-11",
+        startTime: "10:00",
+        endTime: "11:30",
+        payload: { description: "Edited entry", hours: 1.5 }
+      }),
+      worker
+    );
+
+    expect(edited.status).toBe(200);
+    expect(edited.body.data.activityDate).toBe("2026-04-11");
+    expect(edited.body.data.startTime).toBe("10:00");
+    expect(edited.body.data.endTime).toBe("11:30");
+    expect(edited.body.data.payload.description).toBe("Edited entry");
+    expect(edited.body.data.status).toBe("submitted");
+  });
+
+  it("allows editing rejected activity but blocks editing approved activity", async () => {
+    const app = createApp();
+    const base = await setupBase(app);
+
+    const rejectTarget = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        activityDate: "2026-04-12",
+        startTime: "09:00",
+        endTime: "10:00",
+        payload: { description: "To be rejected", hours: 1 },
+        status: "submitted"
+      }),
+      worker
+    );
+    expect(rejectTarget.status).toBe(201);
+    const rejectTargetId = rejectTarget.body.data.id as string;
+
+    const rejected = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities/${rejectTargetId}/reject`).send({
+        reason: "Needs correction"
+      }),
+      hod
+    );
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.data.status).toBe("rejected");
+
+    const editRejected = await withAuth(
+      request(app).patch(`/v1/tenants/${base.tenantId}/activities/${rejectTargetId}`).send({
+        activityDate: "2026-04-12",
+        startTime: "10:00",
+        endTime: "11:00",
+        payload: { description: "Corrected after reject", hours: 1 }
+      }),
+      worker
+    );
+    expect(editRejected.status).toBe(200);
+    expect(editRejected.body.data.status).toBe("rejected");
+    expect(editRejected.body.data.payload.description).toBe("Corrected after reject");
+
+    const approveTarget = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities`).send({
+        workDepartmentId: base.depBId,
+        taskTemplateId: base.taskTemplateId,
+        activityDate: "2026-04-13",
+        startTime: "09:00",
+        endTime: "10:00",
+        payload: { description: "To be approved", hours: 1 },
+        status: "submitted"
+      }),
+      worker
+    );
+    expect(approveTarget.status).toBe(201);
+    const approveTargetId = approveTarget.body.data.id as string;
+
+    const approved = await withAuth(
+      request(app).post(`/v1/tenants/${base.tenantId}/activities/${approveTargetId}/approve`).send({}),
+      hod
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.body.data.status).toBe("approved");
+
+    const editApproved = await withAuth(
+      request(app).patch(`/v1/tenants/${base.tenantId}/activities/${approveTargetId}`).send({
+        activityDate: "2026-04-13",
+        startTime: "10:00",
+        endTime: "11:00",
+        payload: { description: "Should fail", hours: 1 }
+      }),
+      worker
+    );
+    expect(editApproved.status).toBe(400);
+    expect(String(editApproved.body.error?.message ?? "")).toContain("submitted or rejected");
+  });
+
   it("allows only assigned HOD to approve department activity", async () => {
     const app = createApp();
     const base = await setupBase(app);

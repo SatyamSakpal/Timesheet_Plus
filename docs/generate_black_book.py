@@ -105,6 +105,11 @@ def add_code(doc: Document, title: str, code: str) -> None:
         doc.add_paragraph(line.rstrip(), style="CodeBlock")
 
 
+def add_image_placeholder(doc: Document, label: str) -> None:
+    add_body(doc, f"[IMAGE PLACEHOLDER - {label}]")
+    add_body(doc, "Insert screenshot/image here during final report formatting.")
+
+
 def add_page_break(doc: Document) -> None:
     doc.add_page_break()
 
@@ -266,6 +271,15 @@ def chapter_1(doc: Document) -> None:
             "digital system for institutional work-log management."
         ),
     )
+    add_body(
+        doc,
+        (
+            "During requirement discovery, repeated patterns were identified across institutions: fragmented records, "
+            "lack of department-level transparency, delayed approvals, and no reliable audit trail for corrections. "
+            "These patterns indicated that the issue was not only about data entry convenience, but also about "
+            "governance, visibility, and accountability in day-to-day institutional operations."
+        ),
+    )
     add_heading(doc, "1.2 Overview of the System", level=2)
     add_body(
         doc,
@@ -273,6 +287,15 @@ def chapter_1(doc: Document) -> None:
             "Timesheet+ (implemented as TimesheetPlus) is a multi-tenant web application for educational organizations "
             "to manage daily employee work logs digitally. The system supports tenant setup, department configuration, "
             "employee assignment, activity template creation, customizable form fields, and role-based dashboard monitoring."
+        ),
+    )
+    add_body(
+        doc,
+        (
+            "The platform is organized around tenant boundaries to ensure strict organizational isolation while still "
+            "allowing a common technical architecture. Each tenant can configure departments, role permissions, and "
+            "activity templates independently, which makes the solution reusable for institutions with different "
+            "administrative structures and workflow maturity levels."
         ),
     )
     add_heading(doc, "1.3 Need for the Project", level=2)
@@ -289,6 +312,14 @@ def chapter_1(doc: Document) -> None:
         (
             "Timesheet+ addresses these challenges by providing a centralized, configurable, and secure platform "
             "for daily activity tracking and monitoring."
+        ),
+    )
+    add_body(
+        doc,
+        (
+            "The need is further strengthened by compliance and reporting expectations in modern institutions. "
+            "Operational leaders require dependable weekly and monthly evidence of departmental effort, while HODs "
+            "need review workflows that are quick, traceable, and easy to audit during internal quality checks."
         ),
     )
     add_heading(doc, "1.4 Problem Statement", level=2)
@@ -308,6 +339,14 @@ def chapter_1(doc: Document) -> None:
         "High chance of human errors",
     ]
     add_bullets(doc, limitations)
+    add_body(
+        doc,
+        (
+            "In addition to these limitations, legacy workflows often fail when users contribute across departments, "
+            "because manual systems rarely model such cross-department work explicitly. This creates disputes over "
+            "ownership, reporting mismatch, and delayed approvals."
+        ),
+    )
     add_heading(doc, "1.6 Operating Environment - Hardware and Software", level=2)
     add_table(
         doc,
@@ -335,6 +374,43 @@ def chapter_1(doc: Document) -> None:
     ]
     for paragraph in technology_paragraphs:
         add_body(doc, paragraph)
+
+    add_heading(doc, "1.8 Stakeholders and Their Expectations", level=2)
+    stakeholder_rows = [
+        ["Owner / Admin", "Tenant setup, policy control, data visibility", "Secure configuration, reduced manual coordination"],
+        ["Head of Department", "Review and approve departmental logs", "Fast filtering, accurate review queue, auditability"],
+        ["Staff / Contributor", "Daily activity logging and corrections", "Simple entry flow, clear validation, predictable outcomes"],
+        ["Management", "Operational trend monitoring", "Reliable summaries for decisions and planning"],
+        ["IT / Support Team", "System maintenance and onboarding support", "Stable architecture and clear permission model"],
+    ]
+    add_table(doc, ["Stakeholder", "Primary Interaction", "Expected Outcome"], stakeholder_rows)
+
+    add_heading(doc, "1.9 Expected Benefits and Measurable Outcomes", level=2)
+    benefits = [
+        "Reduction in manual register/spreadsheet dependency for daily logs.",
+        "Faster approval cycle through HOD-scoped review queues.",
+        "Higher data consistency via schema-validated activity templates.",
+        "Lower conflict rate on work attribution through tenant and department scoping.",
+        "Better operational reporting readiness using structured activity records.",
+    ]
+    add_bullets(doc, benefits)
+    add_body(
+        doc,
+        (
+            "A practical success criterion for pilot deployment is consistent weekly usage by staff, measurable drop in "
+            "log correction latency, and improved approval turnaround visibility for each department."
+        ),
+    )
+
+    add_heading(doc, "1.10 Assumptions and Constraints", level=2)
+    assumptions_constraints = [
+        "Users have valid tenant membership before operational actions.",
+        "Network access is available during log submission and review windows.",
+        "Institution administrators maintain role assignments periodically.",
+        "Initial deployment may run with mixed process maturity across departments.",
+        "Advanced analytics and full mobile workflows are deferred to future phases.",
+    ]
+    add_bullets(doc, assumptions_constraints)
     add_page_break(doc)
 
 
@@ -359,6 +435,14 @@ def chapter_2(doc: Document) -> None:
         "To reduce manual errors and paperwork.",
     ]
     add_bullets(doc, objectives)
+    add_body(
+        doc,
+        (
+            "These objectives are sequenced to first establish trustworthy transaction capture, then enforce policy-safe "
+            "review behavior, and finally produce management-level visibility. This sequencing reduces implementation risk "
+            "by prioritizing correctness before advanced reporting."
+        ),
+    )
     add_heading(doc, "2.3 Scope of the Project", level=2)
     add_body(doc, "Where the system will be used:")
     add_bullets(
@@ -381,7 +465,60 @@ def chapter_2(doc: Document) -> None:
             "Management: cross-department dashboard monitoring and decision support.",
         ],
     )
-    add_heading(doc, "2.4 Future Enhancements", level=2)
+    add_heading(doc, "2.4 Proposed Functional Blueprint", level=2)
+    add_body(
+        doc,
+        (
+            "The proposed system is organized into capability layers so each actor interacts with only the relevant "
+            "operations. This keeps user journeys simple while retaining strict authorization guarantees in backend services."
+        ),
+    )
+    functional_blueprint_rows = [
+        ["Access and Identity", "Session bootstrap, tenant context, permission resolution", "Secure entry into role-scoped modules"],
+        ["Tenant Administration", "Roles, invites, departments, task templates", "Controlled organization setup and governance"],
+        ["Activity Operations", "Create, validate, copy, edit, resubmit, delete", "Reliable daily workflow execution"],
+        ["Review Operations", "HOD filtering, approve/reject, scoped visibility", "Timely and accountable decision process"],
+        ["Observability and Audit", "Status transitions, approvals, change logs", "Traceable operational history"],
+    ]
+    add_table(doc, ["Layer", "Responsibilities", "Outcome"], functional_blueprint_rows)
+
+    add_heading(doc, "2.5 End-to-End Workflow Model", level=2)
+    add_body(doc, "Primary workflow from creation to closure:")
+    workflow_points = [
+        "Staff logs activity using department-assigned templates and validated fields.",
+        "System enforces time ordering and overlap checks per user/date.",
+        "Submitted items enter scoped HOD review queues.",
+        "Reviewer approves or rejects with explicit reason.",
+        "Rejected entries can be corrected by creator through edit/resubmit paths.",
+        "Final status remains queryable for personal and departmental reporting.",
+    ]
+    add_bullets(doc, workflow_points)
+    add_body(
+        doc,
+        (
+            "This workflow is designed to minimize ambiguity in responsibility transitions. Each state change is explicit, "
+            "and the actor performing the action is captured for audit and retrospective analysis."
+        ),
+    )
+
+    add_heading(doc, "2.6 Control, Security, and Data Governance Model", level=2)
+    controls = [
+        "Tenant isolation is enforced in all business queries and writes.",
+        "Role permissions are checked before module-level operations.",
+        "Creator-only rules protect edit/delete/resubmit boundaries.",
+        "Department-scoped review prevents unauthorized cross-department decisions.",
+        "Validation and audit logging reduce silent failures and policy drift.",
+    ]
+    add_bullets(doc, controls)
+    add_body(
+        doc,
+        (
+            "Together, these controls make the proposed system suitable for institutions where operational data must be "
+            "trusted by both administrative and academic leadership teams."
+        ),
+    )
+
+    add_heading(doc, "2.7 Future Enhancements", level=2)
     future_items = [
         "Mobile application version",
         "Attendance integration",
@@ -420,6 +557,7 @@ def chapter_3(doc: Document) -> None:
         "FR-10: The system shall support resubmission of rejected activities by creator.",
         "FR-11: The system shall expose department-scoped activity listings.",
         "FR-12: The system shall maintain audit logs for key business actions.",
+        "FR-13: The system shall allow creator-only edits for submitted/rejected activities.",
     ]
     non_functional_requirements = [
         "NFR-01: API responses should be deterministic with consistent error envelopes.",
@@ -813,6 +951,8 @@ def chapter_5(doc: Document) -> None:
         ["AT-06", "Only scoped HOD can approve managed-department activity", "Pass"],
         ["AT-07", "Owner can remove tenant member; owner removal blocked", "Pass"],
         ["AT-08", "Task template update increments version", "Pass"],
+        ["AT-09", "Owner-only edit allowed for submitted/rejected logs", "Pass"],
+        ["AT-10", "My Activity copy-previous-week preview requires explicit confirm", "Pass"],
     ]
     add_table(doc, ["Case ID", "Scenario", "Status"], acceptance_rows)
 
@@ -837,6 +977,8 @@ def chapter_5(doc: Document) -> None:
         ("Activities", "Approve submitted activity"),
         ("Activities", "Reject submitted activity with reason"),
         ("Activities", "Allow resubmission by original creator only"),
+        ("Activities", "Allow creator-only edit for submitted/rejected entries"),
+        ("Activities", "Block edit for approved/resubmitted entries"),
         ("Directory", "HOD scope should include member and contributor visibility"),
         ("Directory", "Block worker from /users endpoint"),
     ]
@@ -1060,7 +1202,15 @@ def chapter_12(doc: Document) -> None:
         ScreenDoc("/app/tenants/[tenantId]/activities/[taskTemplateId]", "Template-Based Entry", "Direct template context activity entry", "Task payload", "Required schema fields", "Created entry", "Staff"),
         ScreenDoc("/app/tenants/[tenantId]/activity", "Activity Module", "Entry module wrapper", "None", "Tenant context required", "Navigation to my/new activity", "Staff"),
         ScreenDoc("/app/tenants/[tenantId]/activity/new", "New Activity", "Primary entry form", "Date/time/department/task/payload", "Overlap + required field checks", "Save draft / submit", "Staff"),
-        ScreenDoc("/app/tenants/[tenantId]/activity/my", "My Activity", "View own activities", "Status/date filters", "User-scoped access", "Sorted personal activity history", "Staff"),
+        ScreenDoc(
+            "/app/tenants/[tenantId]/activity/my",
+            "My Activity",
+            "View own activities with week-first navigation, copy preview, and edit controls",
+            "Status/date filters, date-tag arrows, copy confirmation, edit payload",
+            "User-scoped access; only creator can edit submitted/rejected logs",
+            "Table-form personal activity history with detail and edit modals",
+            "Staff"
+        ),
         ScreenDoc("/app/tenants/[tenantId]/hod/departments/[departmentId]/members", "HOD Members", "View department members/contributors", "Department id", "Managed scope required", "Compact member list", "HOD"),
         ScreenDoc("/app/tenants/[tenantId]/admin", "Admin Landing", "Admin module entry", "None", "Permission-gated module links", "Navigation cards", "Owner/Admin"),
         ScreenDoc("/app/tenants/[tenantId]", "Tenant Home", "Tenant-specific route resolver", "Tenant context", "Membership validation", "Redirect to correct role dashboard", "All members"),
@@ -1089,6 +1239,7 @@ def chapter_12(doc: Document) -> None:
                 "without losing overall workflow continuity."
             ),
         )
+        add_image_placeholder(doc, f"{screen.route} screen")
 
     add_heading(doc, "12.23 Data Validation Summary Matrix", level=2)
     validation_matrix = [
@@ -1099,12 +1250,27 @@ def chapter_12(doc: Document) -> None:
         ("Select/Radio field", "Options list must be non-empty", "400 custom schema issue"),
         ("Activity time", "endTime must be greater than startTime", "Client and API validation failure"),
         ("Activity overlap", "No overlap for same user/date except rejected", "400 overlap summary"),
+        ("Activity edit", "Only creator can edit submitted/rejected activity", "403/400 access or state error"),
         ("Approval actions", "Only submitted/resubmitted allowed", "400 invalid status transition"),
         ("Role deletion", "Blocked if role assigned/system role", "400 with assigned users summary"),
         ("User detail access", "Owner or visible HOD scope only", "403 forbidden"),
     ]
     for field_name, rule, failure in validation_matrix:
         add_body(doc, f"- {field_name}: Rule -> {rule}; Failure Response -> {failure}.")
+
+    add_heading(doc, "12.24 Screenshot Placeholder Index", level=2)
+    placeholder_rows = [
+        ["IMG-01", "My Activity filter + date arrows + date tag"],
+        ["IMG-02", "My Activity table view with actions"],
+        ["IMG-03", "Copy Previous Week preview modal"],
+        ["IMG-04", "Edit Activity modal (submitted log)"],
+        ["IMG-05", "HOD Review table and people panel"],
+        ["IMG-06", "Users directory with visibility tags"],
+        ["IMG-07", "Roles management page"],
+        ["IMG-08", "Department detail member/HOD mapping page"],
+    ]
+    add_table(doc, ["Placeholder ID", "Suggested Screenshot"], placeholder_rows)
+
     user_manual_notes = [
         "Training should begin with role mapping so every user understands owner, HOD, and staff responsibilities.",
         "Invite acceptance and rejection should be demonstrated before tenant actions to avoid membership confusion.",

@@ -6,3 +6,4 @@ dist/
 coverage/
 *.log
 service-account.json
+__pycache__

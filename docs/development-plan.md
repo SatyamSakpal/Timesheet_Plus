@@ -1,6 +1,6 @@
 # TimesheetPlus Development Tracking
 
-Snapshot date: 2026-04-27
+Snapshot date: 2026-04-28
 
 ## Backend Milestones
 - [x] B1 Foundation
@@ -33,6 +33,12 @@ Snapshot date: 2026-04-27
   - aggregate all-departments filtering
   - contributor-only people panel in all-departments mode
   - row selection mode and bulk approve/reject.
+- My Activity:
+  - current-week default date filter
+  - date-window arrows around the date tag
+  - copy-previous-week preview modal + confirm copy
+  - table-format entries view
+  - owner-only edit for `submitted` and `rejected` logs.
 
 ## Current API Surface
 
@@ -85,6 +91,7 @@ Snapshot date: 2026-04-27
 - `POST /v1/tenants/:tenantId/activities/:activityId/approve`
 - `POST /v1/tenants/:tenantId/activities/:activityId/reject`
 - `POST /v1/tenants/:tenantId/activities/:activityId/resubmit`
+- `PATCH /v1/tenants/:tenantId/activities/:activityId`
 - `DELETE /v1/tenants/:tenantId/activities/:activityId`
 
 ## Active Backlog

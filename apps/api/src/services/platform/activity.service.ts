@@ -241,6 +241,53 @@ export class ActivityService extends TaskService {
     return next;
   }
 
+  async editOwnActivity(
+    tenantId: string,
+    activityId: string,
+    actorUserId: string,
+    input: {
+      activityDate: string;
+      startTime: string;
+      endTime: string;
+      payload: Record<string, unknown>;
+    }
+  ): Promise<ActivityEntryEntity> {
+    const activity = await this.getActivityOrThrow(tenantId, activityId);
+    if (activity.userId !== actorUserId) {
+      forbidden("Only creator can edit this activity");
+    }
+    if (!["submitted", "rejected"].includes(activity.status)) {
+      badRequest("Only submitted or rejected entries can be edited");
+    }
+
+    validateTaskPayload(activity.taskSchemaSnapshot, input.payload, true);
+    await this.assertNoTimeOverlap(
+      tenantId,
+      actorUserId,
+      input.activityDate,
+      input.startTime,
+      input.endTime,
+      activity.id
+    );
+
+    const timestamp = nowIso();
+    const next = await this.store.update<ActivityEntryEntity>(
+      COLLECTIONS.activityEntries,
+      activity.id,
+      {
+        activityDate: input.activityDate,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        payload: input.payload,
+        updatedAt: timestamp
+      }
+    );
+    await this.createAuditLog(tenantId, actorUserId, "activity.edit", "activity", activity.id, {
+      status: activity.status
+    });
+    return next;
+  }
+
   async deleteOwnPendingActivity(
     tenantId: string,
     activityId: string,
@@ -266,7 +313,8 @@ export class ActivityService extends TaskService {
     userId: string,
     activityDate: string,
     startTime: string,
-    endTime: string
+    endTime: string,
+    ignoreActivityId?: string
   ): Promise<void> {
     const start = parseTimeToMinutes(startTime);
     const end = parseTimeToMinutes(endTime);
@@ -281,6 +329,7 @@ export class ActivityService extends TaskService {
     ]);
 
     const overlaps = sameDayActivities
+      .filter((activity) => !ignoreActivityId || activity.id !== ignoreActivityId)
       .filter((activity) => activity.status !== "rejected")
       .filter((activity) => {
         const existingStart = parseTimeToMinutes(activity.startTime);

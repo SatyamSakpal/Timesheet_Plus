@@ -10,7 +10,8 @@ import { param } from "./helpers";
 import {
   createActivitySchema,
   rejectActivitySchema,
-  resubmitActivitySchema
+  resubmitActivitySchema,
+  updateActivitySchema
 } from "./schemas/activity.schemas";
 
 const router = Router();
@@ -167,6 +168,18 @@ scopedTenantRouter.post(
     const tenantId = param(req, "tenantId");
     const activityId = param(req, "activityId");
     const next = await service.resubmitActivity(tenantId, activityId, req.user!.uid, input.payload);
+    res.json({ data: next });
+  })
+);
+
+scopedTenantRouter.patch(
+  "/activities/:activityId",
+  asyncHandler(async (req, res) => {
+    const input = updateActivitySchema.parse(req.body);
+    const service = getPlatformService();
+    const tenantId = param(req, "tenantId");
+    const activityId = param(req, "activityId");
+    const next = await service.editOwnActivity(tenantId, activityId, req.user!.uid, input);
     res.json({ data: next });
   })
 );

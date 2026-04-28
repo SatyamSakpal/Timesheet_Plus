@@ -54,6 +54,7 @@ When `MOCK_AUTH_ENABLED=true`, pass:
   - blocking departments are returned in error details.
 - Tenant soft delete (`DELETE /tenants/:tenantId`) excludes deleted tenant from `/v1/me` memberships.
 - Activity creation enforces time-range overlap validation per user/date.
+- Activity editing supports creator-owned updates for `submitted` and `rejected` entries.
 
 ## API Surface
 
@@ -110,4 +111,5 @@ When `MOCK_AUTH_ENABLED=true`, pass:
 - `POST /v1/tenants/:tenantId/activities/:activityId/approve`
 - `POST /v1/tenants/:tenantId/activities/:activityId/reject`
 - `POST /v1/tenants/:tenantId/activities/:activityId/resubmit`
+- `PATCH /v1/tenants/:tenantId/activities/:activityId`
 - `DELETE /v1/tenants/:tenantId/activities/:activityId`

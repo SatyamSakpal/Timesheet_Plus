@@ -23,3 +23,13 @@ export const rejectActivitySchema = z.object({
 export const resubmitActivitySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional()
 });
+
+export const updateActivitySchema = z.object({
+  activityDate: z.string().regex(datePattern, "activityDate must be YYYY-MM-DD"),
+  startTime: z.string().regex(timePattern, "startTime must be HH:mm"),
+  endTime: z.string().regex(timePattern, "endTime must be HH:mm"),
+  payload: z.record(z.string(), z.unknown())
+}).refine((input) => input.endTime > input.startTime, {
+  path: ["endTime"],
+  message: "endTime must be later than startTime"
+});

@@ -1,6 +1,6 @@
 # TimesheetPlus Project Overview and Current Status
 
-Snapshot date: 2026-04-27
+Snapshot date: 2026-04-28
 
 ## 1) Project Summary
 - TimesheetPlus is a multi-tenant activity logging and review platform for colleges and education organizations.
@@ -53,6 +53,7 @@ Snapshot date: 2026-04-27
   - create draft/submit
   - approve/reject
   - resubmit rejected entries
+  - edit own `submitted` and `rejected` entries
   - delete own pending entries
   - overlap validation for time ranges on same user/date
 - Tenant user directory and user detail APIs for owner/HOD scope.
@@ -76,7 +77,11 @@ Snapshot date: 2026-04-27
   - logs table department column
 - My Activity:
   - log/create workflow
+  - default current-week filter with date-window arrows on the date tag
+  - previous-week copy preview modal with explicit confirm copy action
   - filtering and details modal
+  - entries table view aligned with HOD-style table presentation
+  - owner-only edit for `submitted` and `rejected` logs
   - delete actions for allowed entries
   - searchable dropdowns for activity/member/department selectors
 - Users directory and user detail views.

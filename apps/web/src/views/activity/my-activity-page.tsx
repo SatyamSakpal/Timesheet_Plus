@@ -180,15 +180,73 @@ function shiftDateKey(dateKey: string, dayDelta: number): string | null {
   return localDateValue(addDays(parsed, dayDelta));
 }
 
+function compareActivitiesByDateTime(left: ActivityEntry, right: ActivityEntry): number {
+  if (left.activityDate === right.activityDate) {
+    if (left.startTime === right.startTime) {
+      return left.createdAt < right.createdAt ? -1 : 1;
+    }
+    return left.startTime < right.startTime ? -1 : 1;
+  }
+  return left.activityDate < right.activityDate ? -1 : 1;
+}
+
 function createDefaultFilters(today: string): ActivityFilters {
+  const todayDate = parseDateKey(today) ?? new Date();
+  const weekStart = startOfWeek(todayDate);
+  const weekEnd = addDays(weekStart, 6);
   return {
-    dateMode: "single",
-    dateFrom: today,
-    dateTo: today,
+    dateMode: "range",
+    dateFrom: localDateValue(weekStart),
+    dateTo: localDateValue(weekEnd),
     departmentId: "",
     status: "",
     taskTemplateId: "",
     keyword: ""
+  };
+}
+
+function getFilterRangeEnd(filters: ActivityFilters): string {
+  return filters.dateMode === "single" ? filters.dateFrom : filters.dateTo;
+}
+
+function getDateWindowSpanDays(filters: ActivityFilters): number {
+  const start = parseDateKey(filters.dateFrom);
+  const end = parseDateKey(getFilterRangeEnd(filters));
+  if (!start || !end || end < start) {
+    return 1;
+  }
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
+}
+
+function shiftActivityFilterWindow(
+  filters: ActivityFilters,
+  direction: "backward" | "forward",
+  today: string
+): ActivityFilters | null {
+  const start = parseDateKey(filters.dateFrom);
+  const end = parseDateKey(getFilterRangeEnd(filters));
+  if (!start || !end || end < start) {
+    return null;
+  }
+
+  const spanDays = getDateWindowSpanDays(filters);
+  const delta = direction === "forward" ? spanDays : -spanDays;
+  const nextStart = addDays(start, delta);
+  const nextEnd = addDays(end, delta);
+
+  const todayDate = parseDateKey(today);
+  if (direction === "forward" && todayDate && nextStart > todayDate) {
+    return null;
+  }
+
+  const nextStartKey = localDateValue(nextStart);
+  const nextEndKey = localDateValue(nextEnd);
+
+  return {
+    ...filters,
+    dateFrom: nextStartKey,
+    dateTo: filters.dateMode === "single" ? nextStartKey : nextEndKey
   };
 }
 
@@ -237,13 +295,15 @@ export default function MyActivityPage() {
   const queryClient = useQueryClient();
   const { activeTenantId, activeMembership } = useActiveTenant();
   const today = localDateValue();
+  const defaultFilters = createDefaultFilters(today);
 
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isCopyPreviewModalOpen, setIsCopyPreviewModalOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<ActivityEntry | null>(null);
 
-  const [filters, setFilters] = useState<ActivityFilters>(() => createDefaultFilters(today));
-  const [filterDraft, setFilterDraft] = useState<ActivityFilters>(() => createDefaultFilters(today));
+  const [filters, setFilters] = useState<ActivityFilters>(() => defaultFilters);
+  const [filterDraft, setFilterDraft] = useState<ActivityFilters>(() => defaultFilters);
 
   const [logDepartmentId, setLogDepartmentId] = useState("");
   const [logTaskTemplateId, setLogTaskTemplateId] = useState("");
@@ -257,6 +317,12 @@ export default function MyActivityPage() {
   const [resubmitError, setResubmitError] = useState<string | null>(null);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [resubmitPayload, setResubmitPayload] = useState<Record<string, unknown>>({});
+  const [editActivityId, setEditActivityId] = useState<string | null>(null);
+  const [editActivityDate, setEditActivityDate] = useState("");
+  const [editStartTime, setEditStartTime] = useState("");
+  const [editEndTime, setEditEndTime] = useState("");
+  const [editPayload, setEditPayload] = useState<Record<string, unknown>>({});
+  const [editError, setEditError] = useState<string | null>(null);
 
   const activitiesQuery = useQuery({
     queryKey: activeTenantId ? queryKeys.myActivities(activeTenantId) : ["my-activities", "none"],
@@ -459,6 +525,11 @@ export default function MyActivityPage() {
     };
   }, [allActivities]);
 
+  const previousWeekPreviewEntries = useMemo(
+    () => [...weeklyCopyContext.previousWeekEntries].sort(compareActivitiesByDateTime),
+    [weeklyCopyContext.previousWeekEntries]
+  );
+
   const overlapWarnings = useMemo(() => {
     const start = parseTimeToMinutes(startTime);
     const end = parseTimeToMinutes(endTime);
@@ -479,6 +550,36 @@ export default function MyActivityPage() {
       })
       .sort((left, right) => (left.startTime < right.startTime ? -1 : 1));
   }, [activityDate, allActivities, endTime, startTime]);
+
+  const editActivity = useMemo(
+    () => allActivities.find((activity) => activity.id === editActivityId) ?? null,
+    [allActivities, editActivityId]
+  );
+
+  const editOverlapWarnings = useMemo(() => {
+    if (!editActivity) {
+      return [] as ActivityEntry[];
+    }
+    const start = parseTimeToMinutes(editStartTime);
+    const end = parseTimeToMinutes(editEndTime);
+    if (!editActivityDate || start === null || end === null || end <= start) {
+      return [] as ActivityEntry[];
+    }
+
+    return allActivities
+      .filter((activity) => activity.id !== editActivity.id)
+      .filter((activity) => activity.activityDate === editActivityDate)
+      .filter((activity) => activity.status !== "rejected")
+      .filter((activity) => {
+        const existingStart = parseTimeToMinutes(activity.startTime);
+        const existingEnd = parseTimeToMinutes(activity.endTime);
+        if (existingStart === null || existingEnd === null || existingEnd <= existingStart) {
+          return false;
+        }
+        return rangesOverlap(start, end, existingStart, existingEnd);
+      })
+      .sort((left, right) => (left.startTime < right.startTime ? -1 : 1));
+  }, [allActivities, editActivity, editActivityDate, editEndTime, editStartTime]);
 
   const logValidationIssues = useMemo(() => {
     const issues: string[] = [];
@@ -518,6 +619,44 @@ export default function MyActivityPage() {
 
     return issues;
   }, [activityDate, endTime, logPayload, overlapWarnings, selectedTemplate, startTime]);
+
+  const editValidationIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!editActivity) {
+      return issues;
+    }
+
+    if (!editActivityDate) {
+      issues.push("Activity date is required.");
+    }
+    if (!editStartTime) {
+      issues.push("Start time is required.");
+    }
+    if (!editEndTime) {
+      issues.push("End time is required.");
+    }
+    if (editStartTime && editEndTime && editEndTime <= editStartTime) {
+      issues.push("End time must be later than start time.");
+    }
+    if (editOverlapWarnings.length > 0) {
+      const firstOverlap = editOverlapWarnings[0];
+      issues.push(
+        `Time range overlaps with "${firstOverlap.taskTemplateName}" (${firstOverlap.startTime}-${firstOverlap.endTime}) on ${editActivityDate}.`
+      );
+    }
+
+    for (const field of editActivity.taskSchemaSnapshot) {
+      if (!field.required) {
+        continue;
+      }
+      const value = editPayload[field.key];
+      if (value === undefined || value === null || value === "") {
+        issues.push(`"${field.label}" is required.`);
+      }
+    }
+
+    return issues;
+  }, [editActivity, editActivityDate, editEndTime, editOverlapWarnings, editPayload, editStartTime]);
 
   const createActivityMutation = useMutation({
     mutationFn: () =>
@@ -573,6 +712,38 @@ export default function MyActivityPage() {
     }
   });
 
+  const editActivityMutation = useMutation({
+    mutationFn: (input: {
+      activityId: string;
+      activityDate: string;
+      startTime: string;
+      endTime: string;
+      payload: Record<string, unknown>;
+    }) =>
+      apiClient.patch<ActivityEntry>(`/v1/tenants/${activeTenantId}/activities/${input.activityId}`, {
+        body: {
+          activityDate: input.activityDate,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          payload: input.payload
+        }
+      }),
+    onSuccess: async () => {
+      setEditError(null);
+      setEditActivityId(null);
+      setEditActivityDate("");
+      setEditStartTime("");
+      setEditEndTime("");
+      setEditPayload({});
+      if (activeTenantId) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.myActivities(activeTenantId) });
+      }
+    },
+    onError: (nextError) => {
+      setEditError(nextError instanceof Error ? nextError.message : "Failed to update activity.");
+    }
+  });
+
   const deleteActivityMutation = useMutation({
     mutationFn: (activityId: string) =>
       apiClient.delete<void>(`/v1/tenants/${activeTenantId}/activities/${activityId}`),
@@ -598,15 +769,7 @@ export default function MyActivityPage() {
         };
       }
 
-      const previousWeekEntries = [...weeklyCopyContext.previousWeekEntries].sort((left, right) => {
-        if (left.activityDate === right.activityDate) {
-          if (left.startTime === right.startTime) {
-            return left.createdAt < right.createdAt ? -1 : 1;
-          }
-          return left.startTime < right.startTime ? -1 : 1;
-        }
-        return left.activityDate < right.activityDate ? -1 : 1;
-      });
+      const previousWeekEntries = previousWeekPreviewEntries;
 
       if (previousWeekEntries.length === 0) {
         return {
@@ -700,6 +863,7 @@ export default function MyActivityPage() {
     },
     onMutate: () => {
       setCopyFeedback(null);
+      setIsCopyPreviewModalOpen(false);
     },
     onSuccess: async (result) => {
       if (activeTenantId && result.createdCount > 0) {
@@ -749,6 +913,8 @@ export default function MyActivityPage() {
 
   const canDeleteActivity = (activity: ActivityEntry) =>
     activity.userId === activeMembership.userId && ["submitted", "resubmitted"].includes(activity.status);
+  const canEditActivity = (activity: ActivityEntry) =>
+    activity.userId === activeMembership.userId && ["submitted", "rejected"].includes(activity.status);
 
   function openLogModal() {
     setLogError(null);
@@ -764,6 +930,15 @@ export default function MyActivityPage() {
   function openFiltersModal() {
     setFilterDraft(filters);
     setIsFilterModalOpen(true);
+  }
+
+  function openEditActivityModal(activity: ActivityEntry) {
+    setEditError(null);
+    setEditActivityId(activity.id);
+    setEditActivityDate(activity.activityDate);
+    setEditStartTime(activity.startTime);
+    setEditEndTime(activity.endTime);
+    setEditPayload(activity.payload);
   }
 
   function setDraftPresetToToday() {
@@ -810,7 +985,21 @@ export default function MyActivityPage() {
     setFilterDraft(nextDefaults);
   }
 
-  function copyFromPreviousWeek() {
+  function shiftAppliedDateWindow(direction: "backward" | "forward") {
+    const nextFilters = shiftActivityFilterWindow(filters, direction, localDateValue());
+    if (!nextFilters) {
+      return;
+    }
+    setFilters(nextFilters);
+    setFilterDraft(nextFilters);
+  }
+
+  function openCopyPreviousWeekPreview() {
+    setCopyFeedback(null);
+    setIsCopyPreviewModalOpen(true);
+  }
+
+  function confirmCopyFromPreviousWeek() {
     if (copyPreviousWeekMutation.isPending) {
       return;
     }
@@ -834,22 +1023,46 @@ export default function MyActivityPage() {
     await createActivityMutation.mutateAsync();
   }
 
+  async function submitEditedActivity() {
+    setEditError(null);
+    if (!editActivity) {
+      setEditError("Activity not found.");
+      return;
+    }
+    if (editValidationIssues.length > 0) {
+      setEditError("Resolve validation issues before saving changes.");
+      return;
+    }
+    await editActivityMutation.mutateAsync({
+      activityId: editActivity.id,
+      activityDate: editActivityDate,
+      startTime: editStartTime,
+      endTime: editEndTime,
+      payload: editPayload
+    });
+  }
+
   const activeFilterCount =
     [
-      filters.dateMode === "range" || filters.dateFrom !== today || filters.dateTo !== today ? "date" : "",
+      filters.dateMode !== defaultFilters.dateMode ||
+      filters.dateFrom !== defaultFilters.dateFrom ||
+      filters.dateTo !== defaultFilters.dateTo
+        ? "date"
+        : "",
       filters.departmentId,
       filters.status,
       filters.taskTemplateId,
       filters.keyword.trim()
     ].filter(Boolean).length;
 
-  const appliedFilterLabels: string[] = [];
+  const canShiftDateWindowForward = Boolean(shiftActivityFilterWindow(filters, "forward", today));
 
-  if (filters.dateMode === "range") {
-    appliedFilterLabels.push(`Date: ${formatDateLabel(filters.dateFrom)} to ${formatDateLabel(filters.dateTo)}`);
-  } else {
-    appliedFilterLabels.push(`Date: ${formatDateLabel(filters.dateFrom)}`);
-  }
+  const dateFilterLabel =
+    filters.dateMode === "range"
+      ? `Date: ${formatDateLabel(filters.dateFrom)} to ${formatDateLabel(filters.dateTo)}`
+      : `Date: ${formatDateLabel(filters.dateFrom)}`;
+
+  const appliedFilterLabels: string[] = [];
 
   if (filters.departmentId) {
     appliedFilterLabels.push(`Department: ${departmentNameById.get(filters.departmentId) ?? "Unknown department"}`);
@@ -895,13 +1108,13 @@ export default function MyActivityPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <SectionTitle
             title="My Activity"
-            subtitle="All filters are applied from the filter modal. Current selections are listed below."
+            subtitle="Date range can be shifted with arrows. Other filters are applied from the filter modal."
           />
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               disabled={copyPreviousWeekMutation.isPending}
-              onClick={copyFromPreviousWeek}
+              onClick={openCopyPreviousWeekPreview}
             >
               {copyPreviousWeekMutation.isPending ? "Copying..." : "Copy Previous Week"}
             </Button>
@@ -914,7 +1127,21 @@ export default function MyActivityPage() {
             <Button onClick={openLogModal}>Log Activity</Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" onClick={() => shiftAppliedDateWindow("backward")} aria-label="Move date window backward">
+            {"<"}
+          </Button>
+          <span className="rounded-full border border-brand-mist bg-brand-mist/30 px-3 py-1 text-xs font-semibold text-brand-slate">
+            {dateFilterLabel}
+          </span>
+          <Button
+            variant="ghost"
+            onClick={() => shiftAppliedDateWindow("forward")}
+            disabled={!canShiftDateWindowForward}
+            aria-label="Move date window forward"
+          >
+            {">"}
+          </Button>
           {appliedFilterLabels.map((label) => (
             <span
               key={label}
@@ -924,11 +1151,6 @@ export default function MyActivityPage() {
             </span>
           ))}
         </div>
-        <p className="mt-2 text-xs text-brand-moss">
-          Copy source range: {formatDateLabel(weeklyCopyContext.previousWeekStart)} -{" "}
-          {formatDateLabel(weeklyCopyContext.previousWeekEnd)} ({weeklyCopyContext.previousWeekEntries.length}{" "}
-          eligible log{weeklyCopyContext.previousWeekEntries.length === 1 ? "" : "s"}).
-        </p>
         {copyFeedback ? (
           <div
             className={`mt-3 rounded-md border px-3 py-2 text-sm ${
@@ -948,6 +1170,95 @@ export default function MyActivityPage() {
           </div>
         ) : null}
       </Card>
+
+      {isCopyPreviewModalOpen ? (
+        <ModalOverlay
+          onClose={() => {
+            if (copyPreviousWeekMutation.isPending) {
+              return;
+            }
+            setIsCopyPreviewModalOpen(false);
+          }}
+        >
+          <section
+            className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+                    Copy Previous Week
+                  </h2>
+                  <p className="mt-1 text-sm text-[#64748b]">
+                    Source: {formatDateLabel(weeklyCopyContext.previousWeekStart)} to{" "}
+                    {formatDateLabel(weeklyCopyContext.previousWeekEnd)}. Review entries before confirming copy.
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (copyPreviousWeekMutation.isPending) {
+                      return;
+                    }
+                    setIsCopyPreviewModalOpen(false);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+
+              {previousWeekPreviewEntries.length ? (
+                <div className="mt-4 space-y-2">
+                  {previousWeekPreviewEntries.map((entry) => {
+                    const targetDate = shiftDateKey(entry.activityDate, 7) ?? "Invalid date";
+                    return (
+                      <article
+                        key={entry.id}
+                        className="rounded-lg border border-brand-mist/70 bg-[#f8fafc] px-3 py-2 text-sm text-brand-slate"
+                      >
+                        <p className="font-semibold">{entry.taskTemplateName}</p>
+                        <p className="mt-1 text-xs text-brand-moss">
+                          {formatDepartment(entry.workDepartmentId)} | {entry.activityDate} {entry.startTime}-{entry.endTime}
+                        </p>
+                        <p className="mt-1 text-xs text-brand-moss">
+                          Copies to: {targetDate} {entry.startTime}-{entry.endTime}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-brand-moss">
+                  No non-rejected logs found in the previous week to copy.
+                </p>
+              )}
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (copyPreviousWeekMutation.isPending) {
+                      return;
+                    }
+                    setIsCopyPreviewModalOpen(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmCopyFromPreviousWeek}
+                  disabled={copyPreviousWeekMutation.isPending || previousWeekPreviewEntries.length === 0}
+                >
+                  {copyPreviousWeekMutation.isPending
+                    ? "Copying..."
+                    : `Confirm Copy (${previousWeekPreviewEntries.length})`}
+                </Button>
+              </div>
+            </div>
+          </section>
+        </ModalOverlay>
+      ) : null}
 
       <Card>
         <SectionTitle title="Personal Dashboard" subtitle="Weekly/monthly totals and personal trend overview." />
@@ -1011,64 +1322,103 @@ export default function MyActivityPage() {
 
         {!activitiesQuery.isLoading && !activitiesQuery.error ? (
           filteredActivities.length ? (
-            <div className="space-y-2">
-              {filteredActivities.map((activity) => (
-                <div
-                  key={activity.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedActivity(activity)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedActivity(activity);
-                    }
-                  }}
-                  className="flex cursor-pointer flex-col gap-2 rounded-md border border-brand-mist/60 bg-white p-3 transition hover:border-brand-moss/60 hover:bg-brand-mist/20 focus:outline-none focus:ring-2 focus:ring-brand-moss/30 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <p className="font-semibold text-brand-slate">{activity.taskTemplateName}</p>
-                    <p className="text-xs text-brand-moss">
-                      {formatDepartment(activity.workDepartmentId)} | {activity.activityDate} | {activity.startTime}-{activity.endTime} |{" "}
-                      {formatDuration(getActivityDurationMinutes(activity))}
-                    </p>
-                    <p className="text-xs text-brand-moss">{formatDate(activity.createdAt)}</p>
-                    {activity.rejectionReason ? (
-                      <p className="text-xs text-red-700">Reason: {activity.rejectionReason}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge value={activity.status} tone={toneByStatus(activity.status)} />
-                    {canDeleteActivity(activity) ? (
-                      <Button
-                        variant="ghost"
-                        className="px-2 py-1 text-xs text-red-700/80 hover:bg-red-50 hover:text-red-700"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (!window.confirm("Delete this submitted log? This action cannot be undone.")) {
-                            return;
-                          }
-                          void deleteActivityMutation.mutateAsync(activity.id);
-                        }}
-                        disabled={deleteActivityMutation.isPending}
-                      >
-                        Delete
-                      </Button>
-                    ) : null}
-                    {activity.status === "rejected" ? (
-                      <Button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setEditingActivityId(activity.id);
-                          setResubmitPayload(activity.payload);
-                        }}
-                      >
-                        Resubmit
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-brand-mist text-left text-xs uppercase tracking-wide text-brand-moss">
+                    <th className="px-2 py-2">Date</th>
+                    <th className="px-2 py-2">Time</th>
+                    <th className="px-2 py-2">Duration</th>
+                    <th className="px-2 py-2">Task</th>
+                    <th className="px-2 py-2">Department</th>
+                    <th className="px-2 py-2">Status</th>
+                    <th className="px-2 py-2">Logged On</th>
+                    <th className="px-2 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredActivities.map((activity) => (
+                    <tr
+                      key={activity.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open activity ${activity.taskTemplateName} on ${activity.activityDate}`}
+                      className={`border-b border-brand-mist/50 cursor-pointer align-top transition hover:bg-brand-mist/20 ${
+                        selectedActivity?.id === activity.id ? "bg-brand-mist/30" : ""
+                      }`}
+                      onClick={() => setSelectedActivity(activity)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedActivity(activity);
+                        }
+                      }}
+                    >
+                      <td className="px-2 py-2">{activity.activityDate}</td>
+                      <td className="px-2 py-2 text-xs text-brand-moss">
+                        {activity.startTime}-{activity.endTime}
+                      </td>
+                      <td className="px-2 py-2">{formatDuration(getActivityDurationMinutes(activity))}</td>
+                      <td className="px-2 py-2">
+                        <p className="font-semibold text-brand-slate">{activity.taskTemplateName}</p>
+                        {activity.rejectionReason ? (
+                          <p className="mt-1 text-xs text-red-700">Reason: {activity.rejectionReason}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-brand-moss">
+                        {formatDepartment(activity.workDepartmentId)}
+                      </td>
+                      <td className="px-2 py-2">
+                        <Badge value={activity.status} tone={toneByStatus(activity.status)} />
+                      </td>
+                      <td className="px-2 py-2 text-xs text-brand-moss">{formatDate(activity.createdAt)}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canEditActivity(activity) ? (
+                            <Button
+                              variant="ghost"
+                              className="px-2 py-1 text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEditActivityModal(activity);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          ) : null}
+                          {canDeleteActivity(activity) ? (
+                            <Button
+                              variant="ghost"
+                              className="px-2 py-1 text-xs text-red-700/80 hover:bg-red-50 hover:text-red-700"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!window.confirm("Delete this submitted log? This action cannot be undone.")) {
+                                  return;
+                                }
+                                void deleteActivityMutation.mutateAsync(activity.id);
+                              }}
+                              disabled={deleteActivityMutation.isPending}
+                            >
+                              Delete
+                            </Button>
+                          ) : null}
+                          {activity.status === "rejected" ? (
+                            <Button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setEditingActivityId(activity.id);
+                                setResubmitPayload(activity.payload);
+                              }}
+                            >
+                              Resubmit
+                            </Button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <p className="text-sm text-brand-moss">No logs for the selected date range and filters.</p>
@@ -1522,6 +1872,130 @@ export default function MyActivityPage() {
                 </Button>
               </div>
               <InlineError message={logError} />
+            </div>
+          </section>
+        </ModalOverlay>
+      ) : null}
+
+      {editActivity ? (
+        <ModalOverlay
+          onClose={() => {
+            if (editActivityMutation.isPending) {
+              return;
+            }
+            setEditActivityId(null);
+          }}
+        >
+          <section
+            className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-[0_18px_52px_rgba(15,23,42,0.24)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-[#0f172a]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
+                    Edit Activity
+                  </h2>
+                  <p className="mt-1 text-sm text-[#64748b]">
+                    {editActivity.taskTemplateName} | {formatDepartment(editActivity.workDepartmentId)}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (editActivityMutation.isPending) {
+                      return;
+                    }
+                    setEditActivityId(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <div>
+                  <Label htmlFor="edit-activity-date">Activity Date *</Label>
+                  <Input
+                    id="edit-activity-date"
+                    type="date"
+                    value={editActivityDate}
+                    onChange={(event) => setEditActivityDate(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-start-time">Start Time *</Label>
+                  <Input
+                    id="edit-start-time"
+                    type="time"
+                    value={editStartTime}
+                    onChange={(event) => setEditStartTime(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-end-time">End Time *</Label>
+                  <Input
+                    id="edit-end-time"
+                    type="time"
+                    value={editEndTime}
+                    onChange={(event) => setEditEndTime(event.target.value)}
+                  />
+                </div>
+              </div>
+
+              {editOverlapWarnings.length > 0 ? (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <p className="font-semibold">Time-overlap detected</p>
+                  <p className="mt-1">This entry overlaps with existing logs on {editActivityDate}:</p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {editOverlapWarnings.slice(0, 5).map((activity) => (
+                      <li key={activity.id}>
+                        {activity.taskTemplateName} ({activity.startTime}-{activity.endTime})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="mt-4">
+                <DynamicFieldRenderer
+                  fields={editActivity.taskSchemaSnapshot}
+                  values={editPayload}
+                  onChange={(fieldKey, value) =>
+                    setEditPayload((state) => ({
+                      ...state,
+                      [fieldKey]: value
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="mt-4">
+                <ValidationSummary errors={editValidationIssues} />
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (editActivityMutation.isPending) {
+                      return;
+                    }
+                    setEditActivityId(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={editActivityMutation.isPending}
+                  onClick={() => {
+                    void submitEditedActivity();
+                  }}
+                >
+                  {editActivityMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+              <InlineError message={editError} />
             </div>
           </section>
         </ModalOverlay>

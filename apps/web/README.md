@@ -83,6 +83,12 @@ Next.js + TypeScript frontend for the TimesheetPlus backend.
   - all-departments aggregate filter (for multi-department HODs)
   - row details modal
   - selection mode for row-based multi-select and bulk approve/reject.
+- My Activity page supports:
+  - default current-week date filter
+  - date-chip navigation arrows to shift day/range windows (forward blocked until next window starts)
+  - previous-week copy preview modal with confirm action
+  - table-format entries list with row details modal
+  - owner-only edit for `submitted` and `rejected` logs via edit modal.
 
 ## Notes
 - Frontend integrates through backend REST APIs only.
