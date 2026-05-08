@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "seed:tenant-dummy": "tsx src/scripts/seed-tenant-dummy-data.ts",
     "test": "vitest run --pool=threads --maxWorkers=1",
     "test:watch": "vitest --pool=threads --maxWorkers=1"
   },

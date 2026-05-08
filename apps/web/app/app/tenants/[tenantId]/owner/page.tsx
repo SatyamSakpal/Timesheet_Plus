@@ -19,12 +19,34 @@ import type {
   TenantUsersDirectoryResponse
 } from "@/lib/types";
 
-function metricFromSeed(seed: string, base: number, span: number) {
-  let hash = 0;
-  for (const char of seed) {
-    hash = (hash * 33 + char.charCodeAt(0)) % 10007;
+function localDateValue(date: Date): string {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeek(date: Date): Date {
+  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = normalized.getDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  normalized.setDate(normalized.getDate() + delta);
+  return normalized;
+}
+
+function formatPercentTrend(current: number, previous: number): string {
+  if (previous === 0) {
+    if (current === 0) {
+      return "0%";
+    }
+    return "+100%";
   }
-  return base + (hash % span);
+  const change = ((current - previous) / previous) * 100;
+  return `${change >= 0 ? "+" : ""}${change.toFixed(1)}%`;
 }
 
 export default function TenantOwnerPage() {
@@ -84,6 +106,24 @@ export default function TenantOwnerPage() {
         })
       );
       return Object.fromEntries(entries) as Record<string, number>;
+    },
+    enabled: Boolean(activeTenantId && activeMembership?.isOwner && departmentIds.length)
+  });
+
+  const ownerDepartmentStatsQuery = useQuery({
+    queryKey:
+      activeTenantId && departmentIds.length
+        ? ["owner-dashboard-department-stats", activeTenantId, departmentIds]
+        : ["owner-dashboard-department-stats", "none"],
+    queryFn: async () => {
+      const allActivities = await Promise.all(
+        (departmentsQuery.data ?? []).map((department) =>
+          apiClient.get<ActivityEntry[]>(
+            `/v1/tenants/${activeTenantId}/departments/${department.id}/activities`
+          )
+        )
+      );
+      return allActivities.flat();
     },
     enabled: Boolean(activeTenantId && activeMembership?.isOwner && departmentIds.length)
   });
@@ -167,15 +207,43 @@ export default function TenantOwnerPage() {
     );
   }, [hodDepartmentStatsQuery.data]);
 
+  const ownerActivityStats = useMemo(() => {
+    const allActivities = ownerDepartmentStatsQuery.data ?? [];
+    const pendingApprovals = allActivities.filter(
+      (activity) => activity.status === "submitted" || activity.status === "resubmitted"
+    ).length;
+
+    const now = new Date();
+    const currentWeekStartDate = startOfWeek(now);
+    const currentWeekEndDate = addDays(currentWeekStartDate, 6);
+    const previousWeekStartDate = addDays(currentWeekStartDate, -7);
+    const previousWeekEndDate = addDays(currentWeekStartDate, -1);
+
+    const currentWeekStart = localDateValue(currentWeekStartDate);
+    const currentWeekEnd = localDateValue(currentWeekEndDate);
+    const previousWeekStart = localDateValue(previousWeekStartDate);
+    const previousWeekEnd = localDateValue(previousWeekEndDate);
+
+    const logsThisWeek = allActivities.filter(
+      (activity) => activity.activityDate >= currentWeekStart && activity.activityDate <= currentWeekEnd
+    ).length;
+    const logsPreviousWeek = allActivities.filter(
+      (activity) => activity.activityDate >= previousWeekStart && activity.activityDate <= previousWeekEnd
+    ).length;
+
+    return {
+      logsThisWeek,
+      logsPreviousWeek,
+      pendingApprovals
+    };
+  }, [ownerDepartmentStatsQuery.data]);
+
   const stats = useMemo(() => {
-    const seed = activeMembership?.tenantId ?? "owner";
     return [
       {
         label: "Total Active Users",
-        value:
-          membersQuery.data?.filter((member) => member.status === "active").length ??
-          metricFromSeed(seed, 1200, 9000),
-        trend: `+${metricFromSeed(seed + "a", 2, 18)}%`,
+        value: membersQuery.data?.filter((member) => member.status === "active").length ?? 0,
+        trend: "Live",
         tone: "text-[#059669] bg-[#ecfdf5]"
       },
       {
@@ -186,18 +254,24 @@ export default function TenantOwnerPage() {
       },
       {
         label: "Logs This Week",
-        value: metricFromSeed(seed + "logs", 260, 2900),
-        trend: `+${metricFromSeed(seed + "b", 12, 260)}`,
+        value: ownerActivityStats.logsThisWeek,
+        trend: formatPercentTrend(ownerActivityStats.logsThisWeek, ownerActivityStats.logsPreviousWeek),
         tone: "text-[#059669] bg-[#ecfdf5]"
       },
       {
         label: "Pending Approvals",
-        value: metricFromSeed(seed + "pending", 4, 28),
-        trend: "High",
+        value: ownerActivityStats.pendingApprovals,
+        trend: "Live",
         tone: "text-[#ba1a1a] bg-[#ffeceb]"
       }
     ];
-  }, [activeMembership?.tenantId, departmentsQuery.data?.length, membersQuery.data]);
+  }, [
+    departmentsQuery.data?.length,
+    membersQuery.data,
+    ownerActivityStats.logsPreviousWeek,
+    ownerActivityStats.logsThisWeek,
+    ownerActivityStats.pendingApprovals
+  ]);
 
   if (!activeMembership) {
     return <TenantRequired />;

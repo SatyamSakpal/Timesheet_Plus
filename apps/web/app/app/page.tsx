@@ -17,14 +17,6 @@ interface CreatedTenant {
   name: string;
 }
 
-function hashCount(seed: string): number {
-  let value = 0;
-  for (const ch of seed) {
-    value = (value * 31 + ch.charCodeAt(0)) % 997;
-  }
-  return 8 + (value % 140);
-}
-
 function UniversityIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.9">
@@ -206,8 +198,6 @@ function JoinedFeaturedCard({
   onEnter: (membership: TenantMembership) => void | Promise<void>;
   isEntering: boolean;
 }) {
-  const collaborators = Math.max(3, Math.min(21, hashCount(membership.tenantId)));
-
   return (
     <article className="grid min-h-[263px] overflow-hidden rounded-2xl bg-white shadow-[0_12px_32px_rgba(25,28,29,0.06)] md:grid-cols-[112px_1fr]">
       <div className="grid place-items-center bg-[#a6b8ea] p-6">
@@ -224,26 +214,10 @@ function JoinedFeaturedCard({
             <KebabIcon />
           </span>
         </div>
-        <p className="mt-2 text-[10px] uppercase tracking-[0.5px] text-[#6b7280]">Clinical Research Dept</p>
-
-        <div className="mt-4 flex items-center gap-2">
-          <div className="flex -space-x-2">
-            <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-white bg-[#d8e8ff] text-[8px] font-semibold text-[#0d56d0]">
-              A
-            </span>
-            <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-white bg-[#ffd7d7] text-[8px] font-semibold text-[#a12b2b]">
-              B
-            </span>
-            <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-white bg-[#e5e7eb] text-[8px] font-semibold text-[#191c1d]">
-              +{Math.max(1, collaborators - 2)}
-            </span>
-          </div>
-          <span className="text-xs text-[#424654]">Collaborators</span>
-        </div>
 
         <button
           type="button"
-          className="mt-6 w-full rounded-xl bg-gradient-to-br from-[#0040a3] to-[#0d56d0] py-2.5 text-base font-semibold text-white transition hover:brightness-110"
+          className="mt-8 w-full rounded-xl bg-gradient-to-br from-[#0040a3] to-[#0d56d0] py-2.5 text-base font-semibold text-white transition hover:brightness-110"
           onClick={() => onEnter(membership)}
           disabled={isEntering}
         >
@@ -273,10 +247,9 @@ function JoinedCompactCard({
       <h4 className="mt-4 text-[18px] font-bold leading-7 text-[#191c1d]" style={{ fontFamily: "var(--font-heading), sans-serif" }}>
         {membership.tenantName ?? "Joined Tenant"}
       </h4>
-      <p className="mt-1 text-xs text-[#424654]">{variant === "lab" ? "Level 2 Researcher" : "Staff Member"}</p>
       <button
         type="button"
-        className="mt-auto w-full rounded-xl bg-[#edeeef] py-2 text-base font-semibold text-[#424654] transition hover:bg-[#e2e3e7]"
+        className="mt-6 w-full rounded-xl bg-[#edeeef] py-2 text-base font-semibold text-[#424654] transition hover:bg-[#e2e3e7]"
         onClick={() => onEnter(membership)}
         disabled={isEntering}
       >
