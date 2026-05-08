@@ -1,9 +1,10 @@
 import { ActivityTemplateEditorPage } from "@/views/admin/activity-template-editor-page";
 
-export default function TenantActivityTemplateDetailPage({
+export default async function TenantActivityTemplateDetailPage({
   params
 }: {
-  params: { taskTemplateId: string };
+  params: Promise<{ taskTemplateId: string }>;
 }) {
-  return <ActivityTemplateEditorPage mode="edit" taskTemplateId={params.taskTemplateId} />;
+  const { taskTemplateId } = await params;
+  return <ActivityTemplateEditorPage mode="edit" taskTemplateId={taskTemplateId} />;
 }

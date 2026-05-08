@@ -1,12 +1,12 @@
 import { TenantPathSync } from "@/components/layout/tenant-path-sync";
 
-export default function TenantScopedLayout({
+export default async function TenantScopedLayout({
   children,
   params
 }: {
   children: React.ReactNode;
-  params: { tenantId: string };
+  params: Promise<{ tenantId: string }>;
 }) {
-  return <TenantPathSync tenantId={params.tenantId}>{children}</TenantPathSync>;
+  const { tenantId } = await params;
+  return <TenantPathSync tenantId={tenantId}>{children}</TenantPathSync>;
 }
-

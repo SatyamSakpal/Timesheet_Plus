@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { tenantRoutes } from "@/lib/tenant-routes";
 
-export default function TenantActivityIndexPage({
+export default async function TenantActivityIndexPage({
   params
 }: {
-  params: { tenantId: string };
+  params: Promise<{ tenantId: string }>;
 }) {
-  redirect(tenantRoutes.activityNew(params.tenantId));
+  const { tenantId } = await params;
+  redirect(tenantRoutes.activityNew(tenantId));
 }
-
