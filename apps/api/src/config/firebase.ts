@@ -54,6 +54,17 @@ export function initFirebase(): void {
     options.credential = admin.credential.cert(serviceAccount);
   }
 
+  const hasCredentialSource =
+    Boolean(options.credential) || Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+
+  if (env.DATA_PROVIDER === "firestore" && !hasCredentialSource) {
+    throw new Error(
+      "Firestore is enabled but no Google credentials were found. " +
+        "Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 " +
+        "(recommended for hosting), or set GOOGLE_APPLICATION_CREDENTIALS to a valid file path."
+    );
+  }
+
   admin.initializeApp(options);
   initialized = true;
 }
