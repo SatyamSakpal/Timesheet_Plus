@@ -14,10 +14,23 @@ Backend service for multi-tenant activity logging, review, and administration.
 - `DATA_PROVIDER`: `memory` or `firestore`
 - `MOCK_AUTH_ENABLED`: `true` for local/testing with request headers
 - `FIREBASE_PROJECT_ID`: required when using Firebase Auth/Firestore
+- `GOOGLE_APPLICATION_CREDENTIALS`: optional explicit path to Firebase service account JSON
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: optional full service-account JSON string (recommended for hosting)
+- `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64`: optional base64-encoded service-account JSON
 
 Notes:
 - Env values are loaded from shell env first, then local `.env` files.
+- If `GOOGLE_APPLICATION_CREDENTIALS` is not set, API auto-detects `service-account.json` in the current folder, `apps/api`, or repo root.
+- If `FIREBASE_SERVICE_ACCOUNT_JSON` or `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` is provided, API uses it directly for `firebase-admin` credentials.
 - API supports in-memory persistence for local tests and Firestore for persistent environments.
+
+## Render Deployment (Firestore)
+Set these environment variables in Render:
+- `DATA_PROVIDER=firestore`
+- `FIREBASE_PROJECT_ID=<your-project-id>`
+- `FIREBASE_SERVICE_ACCOUNT_JSON=<full service-account json>` (preferred) OR `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=<base64-json>`
+
+Do not upload `service-account.json` to Render and do not commit credentials into git.
 
 ## Local Mock Auth
 When `MOCK_AUTH_ENABLED=true`, pass:

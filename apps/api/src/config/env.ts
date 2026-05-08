@@ -57,7 +57,29 @@ function loadLocalEnvFiles(): void {
   }
 }
 
+function applyDefaultGoogleCredentialsPath(): void {
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    return;
+  }
+
+  const apiRoot = path.resolve(__dirname, "..", "..");
+  const repoRoot = path.resolve(apiRoot, "..", "..");
+  const candidates = [
+    path.resolve(process.cwd(), "service-account.json"),
+    path.resolve(apiRoot, "service-account.json"),
+    path.resolve(repoRoot, "service-account.json")
+  ];
+
+  for (const candidate of new Set(candidates)) {
+    if (fs.existsSync(candidate)) {
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = candidate;
+      return;
+    }
+  }
+}
+
 loadLocalEnvFiles();
+applyDefaultGoogleCredentialsPath();
 
 const envSchema = z.object({
   NODE_ENV: z
@@ -71,7 +93,9 @@ const envSchema = z.object({
     .optional()
     .default("false")
     .transform((value) => value === "true"),
-  FIREBASE_PROJECT_ID: z.string().optional()
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: z.string().optional()
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
